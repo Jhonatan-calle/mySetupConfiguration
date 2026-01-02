@@ -1,0 +1,22 @@
+format = """
+$directory\
+$git_branch\
+$git_status\
+$character
+"""
+
+[directory]
+style = "fg:#89b4fa"
+truncation_length = 3
+truncate_to_repo = true
+
+[git_branch]
+symbol = " "
+style = "fg:#a6e3a1"
+
+[git_status]
+style = "fg:#f9e2af"
+
+[character]
+success_symbol = "[❯](#a6e3a1)"
+error_symbol = "[❯](#f38ba8)"
