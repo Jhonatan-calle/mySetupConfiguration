@@ -4,7 +4,7 @@
     "height": 30,
     "modules-left": ["hyprland/workspaces"],
     "modules-center": ["hyprland/window"],
-    "modules-right": ["network", "battery", "clock"],
+    "modules-right": ["cpu","memory","network", "battery", "clock"],
 
     "hyprland/workspaces": {
         "format": "{name}"
@@ -16,6 +16,17 @@
         "format-disconnected": "⚠ Disconnected",
         "tooltip-format": "{ifname} via {gwaddr}",
         "on-click": "nm-connection-editor" // Abre el gestor de red al hacer clic
+    },
+
+    "memory": {
+    "format": "RAM {percentage}%",
+      "tooltip": true,
+      "tooltip-format": "Used: {used:.1f} GB\nAvailable: {avail:.1f} GB"
+    },
+
+    "cpu": {
+      "format": "CPU {usage}%",
+      "tooltip": true
     },
 
     "battery": {

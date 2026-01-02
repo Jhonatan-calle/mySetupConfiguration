@@ -16,7 +16,7 @@ window#waybar {
     border-bottom: 3px solid #89b4fa;
 }
 
-#network, #battery, #clock {
+#network, #battery, #clock, #memory, #cpu {
     padding: 0 10px;
     margin: 4px;
     border-radius: 8px;
