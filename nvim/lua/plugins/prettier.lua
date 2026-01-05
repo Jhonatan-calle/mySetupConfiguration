@@ -6,7 +6,9 @@ return {
         javascript = { "prettier" },
         javascriptreact = { "prettier" },
         typescript = { "prettier" },
-        typescriptreact = { "prettier" }, -- TSX
+        typescriptreact = { "prettier" },
+        json = { "prettier" },
+        jsonc = { "prettier" },
       },
     },
   },
