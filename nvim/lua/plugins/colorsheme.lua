@@ -2,7 +2,7 @@ return {
   {
     "folke/tokyonight.nvim",
     opts = {
-      style = "storm", -- "night" también sirve. "day" es claro.
+      style = "night", -- "night" también sirve. "day" es claro.
       styles = {
         comments = { italic = false },
         keywords = { italic = false },
