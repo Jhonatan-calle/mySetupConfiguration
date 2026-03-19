@@ -8,3 +8,15 @@ user-dirs.dirs
 user-dirs.locale
 Code - OSS/
 nvim/lazy-lock.json
+dconf/user
+dolphinrc
+mozilla/firefox/Crash Reports/crash_helper_server.log
+nvim/.neoconf.json
+nvim/LICENSE
+nvim/README.md
+nvim/lazyvim.json
+onedrive/items.sqlite3
+onedrive/
+pulse/
+systemd/user/
+session/dolphin_dolphin_dolphin
