@@ -2,13 +2,20 @@ return {
   {
     "folke/tokyonight.nvim",
     opts = {
-      style = "day",
-      transparent = false,
+      style = "storm", -- "night" también sirve. "day" es claro.
       styles = {
-        sidebars = "normal",
-        floats = "normal",
+        comments = { italic = false },
+        keywords = { italic = false },
       },
+      -- puedes subir contraste del sidebar/floats:
+      sidebars = "dark",
+      floats = "dark",
     },
   },
-  { "LazyVim/LazyVim", opts = { colorscheme = "tokyonight" } },
+  {
+    "LazyVim/LazyVim",
+    opts = {
+      colorscheme = "tokyonight",
+    },
+  },
 }

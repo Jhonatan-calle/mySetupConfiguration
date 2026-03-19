@@ -7,3 +7,4 @@ go/
 user-dirs.dirs
 user-dirs.locale
 Code - OSS/
+nvim/lazy-lock.json
