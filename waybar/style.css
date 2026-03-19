@@ -1,32 +1,33 @@
 window#waybar {
-    background: rgba(30, 30, 46, 0.8); /* Color oscuro translúcido */
-    color: #cdd6f4;
-    border-bottom: 2px solid rgba(255, 255, 255, 0.1);
+    background: #000000; /* Alto contraste oscuro */
+    color: #e6e6e6;
+    border-bottom: 2px solid #b3b3b3;
     font-family: "JetBrainsMono Nerd Font";
     font-size: 14px;
 }
 
 #workspaces button {
-    padding: 0 5px;
-    color: #f5c2e7;
+    padding: 0 6px;
+    color: #e6e6e6;
 }
 
 #workspaces button.active {
-    color: #89b4fa;
-    border-bottom: 3px solid #89b4fa;
+    color: #4fd1ff;
+    border-bottom: 3px solid #4fd1ff;
 }
 
-#network, #battery, #clock, #memory, #cpu {
+#network, #battery, #clock, #memory, #cpu, #bluetooth {
     padding: 0 10px;
     margin: 4px;
-    border-radius: 8px;
-    background-color: #313244;
+    border-radius: 6px;
+    background-color: #000000;
+    border: 1px solid #b3b3b3;
 }
 
 #battery.critical {
-    color: #f38ba8; /* Rojo si queda poca batería */
+    color: #ff0000; /* Rojo alto contraste */
 }
 
 #battery.charging {
-    color: #a6e3a1; /* Verde al cargar */
+    color: #00ff00; /* Verde alto contraste */
 }

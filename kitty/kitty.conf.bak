@@ -1,2 +1,16 @@
+# BEGIN_KITTY_THEME
+# Atelier Sulphurpool Dark
+include current-theme.conf
+# END_KITTY_THEME
+
 font_size 10
 
+shell_integration disabled
+
+
+# BEGIN_KITTY_FONTS
+font_family      family='Adwaita Mono' postscript_name=Adwaita-Mono
+bold_font        family='Adwaita Mono' style=Bold
+italic_font      auto
+bold_italic_font auto
+# END_KITTY_FONTS

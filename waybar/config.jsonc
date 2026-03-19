@@ -1,46 +1,56 @@
 {
-    "layer": "bottom",
-    "position": "top",
-    "height": 30,
-    "modules-left": ["hyprland/workspaces"],
-    "modules-center": ["hyprland/window"],
-    "modules-right": ["cpu","memory","network", "battery", "clock"],
+  "layer": "bottom",
+  "position": "top",
+  "height": 30,
+  "modules-left": ["hyprland/workspaces"],
+  "modules-right": ["cpu", "memory", "network", "bluetooth", "battery", "clock"],
 
-    "hyprland/workspaces": {
-        "format": "{name}"
-    },
+  "hyprland/workspaces": {
+    "format": "{name}",
+  },
 
-    "network": {
-        "format-wifi": "  {essid}",
-        "format-ethernet": "󰈀  {ipaddr}",
-        "format-disconnected": "⚠ Disconnected",
-        "tooltip-format": "{ifname} via {gwaddr}",
-        "on-click": "nm-connection-editor" // Abre el gestor de red al hacer clic
-    },
+  "network": {
+    "format-wifi": "  {essid}",
+    "format-ethernet": "󰈀  {ipaddr}",
+    "format-disconnected": "⚠ Disconnected",
+    "tooltip-format": "{ifname} via {gwaddr}",
+    "on-click": "nm-connection-editor", // Abre el gestor de red al hacer clic
+  },
 
-    "memory": {
+  "memory": {
     "format": "RAM {percentage}%",
-      "tooltip": true,
-      "tooltip-format": "Used: {used:.1f} GB\nAvailable: {avail:.1f} GB"
-    },
+    "tooltip": true,
+    "tooltip-format": "Used: {used:.1f} GB\nAvailable: {avail:.1f} GB",
+  },
 
-    "cpu": {
-      "format": "CPU {usage}%",
-      "tooltip": true
+  "cpu": {
+    "format": "CPU {usage}%",
+    "tooltip": true,
+  },
+  "bluetooth": {
+    "format": "  {status}",
+    "format-connected": "  {device_alias}",
+    "format-disconnected": "⚠ Disconnected",
+    "format-connected-battery": "  {device_alias} {device_battery_percentage}%",
+    "tooltip-format": "{controller_alias}\t{controller_address}\n\n{num_connections} connected",
+    "tooltip-format-connected": "{controller_alias}\t{controller_address}\n\n{num_connections} connected\n\n{device_enumerate}",
+    "tooltip-format-enumerate-connected": "{device_alias}\t{device_address}",
+    "tooltip-format-enumerate-connected-battery": "{device_alias}\t{device_address}\t{device_battery_percentage}%",
+    "on-click": "blueman-manager",
+  },
+  "battery": {
+    "states": {
+      "warning": 30,
+      "critical": 15,
     },
+    "format": "{icon}  {capacity}%",
+    "format-charging": "󱐋 {capacity}%",
+    "format-plugged": " {capacity}%",
+    "format-icons": ["", "", "", "", ""],
+  },
 
-    "battery": {
-        "states": {
-            "warning": 30,
-            "critical": 15
-        },
-        "format": "{icon}  {capacity}%",
-        "format-charging": "󱐋 {capacity}%",
-        "format-plugged": " {capacity}%",
-        "format-icons": ["", "", "", "", ""]
-    },
-
-    "clock": {
-        "format": "  {:%H:%M}"
-    }
+  "clock": {
+    "format": "  {:%d/%m/%Y  %H:%M}",
+    "tooltip-format": "<big>{:%Y %B}</big>\n<tt><small>{calendar}</small></tt>",
+  },
 }
