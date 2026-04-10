@@ -5,6 +5,7 @@ return {
       c = { "clang_format" },
       cpp = { "clang_format" },
       objc = { "clang_format" },
+      python = { "ruff_format", "ruff_organize_imports" },
     },
   },
 }

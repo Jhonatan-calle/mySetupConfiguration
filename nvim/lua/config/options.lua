@@ -12,3 +12,9 @@ vim.g.lazyvim_prettier_needs_config = false
 
 
 vim.opt.termguicolors = true
+
+-- Disable spell checking
+vim.opt.spell = false
+
+-- Optional: Disable spell for all buffers
+vim.cmd([[autocmd BufEnter * setlocal nospell]])
