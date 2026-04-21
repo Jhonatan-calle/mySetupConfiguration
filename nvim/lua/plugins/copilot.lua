@@ -15,7 +15,6 @@ return {
         dismiss = "<C-e>",       -- ignore suggestion
       },
     },
-    panel = { enabled = false },
     filetypes = {
       markdown = true,
       help = true,
