@@ -1,0 +1,52 @@
+# Toggle theme between light and dark in Kitty
+toggle_theme() {
+    local kitty_config="$HOME/.config/kitty"
+    local theme_state_file="$kitty_config/.theme_state"
+    local current_theme=$(cat "$theme_state_file" 2>/dev/null)
+
+    # Determine target theme
+    local target_theme
+    if [ -z "$1" ]; then
+        # No argument: toggle between current
+        if [ "$current_theme" = "dark" ]; then
+            target_theme="light"
+        else
+            target_theme="dark"
+        fi
+    else
+        # Argument provided: use it
+        target_theme="$1"
+    fi
+
+    # Validate theme
+    if [ "$target_theme" != "light" ] && [ "$target_theme" != "dark" ]; then
+        echo "Error: Invalid theme. Use 'light' or 'dark'"
+        return 1
+    fi
+
+    # Theme file paths
+    local source_file="$kitty_config/theme-$target_theme.conf"
+    local dest_file="$kitty_config/current-theme.conf"
+
+    # Check if source theme exists
+    if [ ! -f "$source_file" ]; then
+        echo "Error: Theme file not found: $source_file"
+        return 1
+    fi
+
+    # Copy theme file
+    cp "$source_file" "$dest_file"
+
+    # Apply changes to kitty (all windows)
+    if command -v kitty &> /dev/null; then
+        kitty @ set-colors --all --reset 2>/dev/null || true
+    fi
+
+    # Save state
+    echo "$target_theme" > "$theme_state_file"
+
+    echo "✓ Theme changed to: $target_theme"
+}
+
+# Alias for convenience
+alias theme='toggle_theme'
