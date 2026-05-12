@@ -1,5 +1,5 @@
 window#waybar {
-    background: #000000; /* Alto contraste oscuro */
+    background: transparent;
     color: #e6e6e6;
     border-bottom: 2px solid #b3b3b3;
     font-family: "JetBrainsMono Nerd Font";
