@@ -18,3 +18,5 @@ vim.opt.spell = false
 
 -- Optional: Disable spell for all buffers
 vim.cmd([[autocmd BufEnter * setlocal nospell]])
+
+vim.opt.signcolumn = "no"

@@ -9,7 +9,7 @@ return {
       },
       formatters = {
         prettier = {
-          prepend_args = { "--print-width", "75" },
+          prepend_args = { "--print-width", "70" },
         },
       },
     },
