@@ -31,3 +31,23 @@ window#waybar {
 #battery.charging {
     color: #00ff00; /* Verde alto contraste */
 }
+
+#custom-pomodoro {
+    padding: 0 10px;
+    margin: 4px;
+    border-radius: 6px;
+    background-color: #000000;
+    border: 1px solid #b3b3b3;
+}
+
+/* Cuando está corriendo - borde verde */
+#custom-pomodoro.running {
+    border-color: #00ff00;
+    color: #00ff00;
+}
+
+/* Cuando está en break - borde celeste */
+#custom-pomodoro.break {
+    border-color: #4fd1ff;
+    color: #4fd1ff;
+}

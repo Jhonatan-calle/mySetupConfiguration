@@ -3,7 +3,15 @@
   "position": "top",
   "height": 30,
   "modules-left": ["hyprland/workspaces"],
-  "modules-right": ["cpu", "memory", "network", "bluetooth", "battery", "clock"],
+  "modules-right": [
+    "custom/pomodoro",
+    "cpu",
+    "memory",
+    "network",
+    "bluetooth",
+    "battery",
+    "clock",
+  ],
 
   "hyprland/workspaces": {
     "format": "{name}",
@@ -52,5 +60,16 @@
   "clock": {
     "format": "  {:%d/%m/%Y  %H:%M}",
     "tooltip-format": "<big>{:%Y %B}</big>\n<tt><small>{calendar}</small></tt>",
+  },
+
+  "custom/pomodoro": {
+    "exec": "~/.config/waybar/pomodoro.sh",
+    "interval": 1,
+    "on-click": "~/.config/waybar/pomodoro.sh toggle",
+    "on-click-right": "~/.config/waybar/pomodoro.sh reset",
+    "on-click-middle": "~/.config/waybar/pomodoro.sh switch",
+    "tooltip": true,
+    "tooltip-format": "Click: pausar/reanudar\nClic derecho: reset\nClic medio: cambiar modo",
+    "return-type": "json",
   },
 }
