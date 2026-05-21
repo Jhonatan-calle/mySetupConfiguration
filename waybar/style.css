@@ -24,6 +24,18 @@ window#waybar {
     border: 1px solid #b3b3b3;
 }
 
+#bluetooth {
+    color: #b3b3b3;
+}
+#bluetooth.on,
+#bluetooth.disconnected {
+    color: #e6e6e6;
+}
+#bluetooth.connected {
+    color: #4fd1ff;
+    border-color: #4fd1ff;
+}
+
 #battery.critical {
     color: #ff0000; /* Rojo alto contraste */
 }
