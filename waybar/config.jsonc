@@ -64,7 +64,7 @@
   },
 
   "custom/pomodoro": {
-    "exec": "~/.config/waybar/pomodoro.sh",
+    "exec": "nice -n 19 ionice -c 3 ~/.config/waybar/pomodoro.sh",
     "interval": 1,
     "on-click": "~/.config/waybar/pomodoro.sh toggle",
     "on-click-right": "~/.config/waybar/pomodoro.sh reset",
