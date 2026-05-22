@@ -4,8 +4,9 @@ return {
     opts = {
       style = "night", -- "night" también sirve. "day" es claro.
       styles = {
-        comments = { italic = false },
-        keywords = { italic = false },
+        keywords = { italic = false, bold = false },
+        functions = { bold = false },
+        variables = { bold = false },
       },
       -- puedes subir contraste del sidebar/floats:
       sidebars = "dark",
