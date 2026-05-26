@@ -1,6 +1,6 @@
 #!/bin/bash
 
-DATA_FILE="$HOME/.config/waybar/gastos.json"
+DATA_FILE="$HOME/OneDrive/varios/gastos/gastos.json"
 MES_ACTUAL=$(date +%Y-%m)
 
 init_if_needed() {
@@ -11,7 +11,7 @@ init_if_needed() {
   MES_GUARDADO=$(jq -r '.mes' "$DATA_FILE")
   if [ "$MES_GUARDADO" != "$MES_ACTUAL" ]; then
     # Archivar mes anterior en lugar de sobreescribir
-    ARCHIVO="$HOME/.config/waybar/history/${MES_GUARDADO}.json"
+    ARCHIVO="$HOME/OneDrive/varios/gastos/history/${MES_GUARDADO}.json"
     cp "$DATA_FILE" "$ARCHIVO"
     echo '{"mes":"'"$MES_ACTUAL"'","total":0,"items":[]}' >"$DATA_FILE"
   fi
