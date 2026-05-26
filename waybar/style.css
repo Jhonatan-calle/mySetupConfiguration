@@ -63,3 +63,12 @@ window#waybar {
     border-color: #4fd1ff;
     color: #4fd1ff;
 }
+
+#custom-gastos {
+    padding: 0 10px;
+    margin: 4px;
+    border-radius: 6px;
+    background-color: #000000;
+    border: 1px solid #b3b3b3;
+    color: #e6e6e6;
+}

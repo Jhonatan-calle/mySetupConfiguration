@@ -1,0 +1,34 @@
+
+* {
+    font:                        "JetBrainsMono Nerd Font 12";
+    background-color:            #000000;
+    text-color:                  #e6e6e6;
+    border-color:                #b3b3b3;
+}
+
+window {
+    width:                       400px;
+    border:                      1px;
+    border-radius:               6px;
+    padding:                     0;
+}
+
+inputbar {
+    padding:                     6px 10px;
+    border:                      0 0 1px 0;
+    border-color:                #b3b3b3;
+}
+
+prompt {
+    color:                       #4fd1ff;
+    margin:                      0 8px 0 0;
+}
+
+entry {
+    color:                       #e6e6e6;
+}
+
+listview {
+    lines:                       0;
+    padding:                     0;
+}

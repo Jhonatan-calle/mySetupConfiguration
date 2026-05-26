@@ -4,6 +4,11 @@
   "height": 30,
   "modules-left": ["hyprland/workspaces"],
   "modules-right": [
+    "custom/gastos", 
+      //dependnciaas:
+      //  rofi-wayland
+      //  jq
+
     "custom/pomodoro",
     "cpu",
     "memory",
@@ -72,5 +77,13 @@
     "tooltip": true,
     "tooltip-format": "Click: pausar/reanudar\nClic derecho: reset\nClic medio: cambiar modo",
     "return-type": "json",
+  },
+
+  "custom/gastos": {
+    "exec": "~/.config/waybar/gastos.sh",
+    "interval": 30,
+    "on-click": "~/.config/waybar/gastos.sh add",
+    "return-type": "json",
+    "tooltip": true,
   },
 }
