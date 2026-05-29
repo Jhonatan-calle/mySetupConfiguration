@@ -3,7 +3,7 @@
 # Archivo de estado
 STATE_FILE="/tmp/waybar-pomodoro"
 WORK_MINS=30
-BREAK_MINS=5
+BREAK_MINS=1
 LONG_BREAK_MINS=15
 
 # Inicializar si no existe
@@ -11,9 +11,6 @@ if [ ! -f "$STATE_FILE" ]; then
   echo "stopped|0|work" >"$STATE_FILE"
 fi
 
-read_state() {
-  cat "$STATE_FILE"
-}
 
 case "$1" in
 toggle)
@@ -68,10 +65,6 @@ switch)
     now=$(date +%s)
     spent=$((now - start))
     if [ $spent -ge $total ]; then
-      if [[ "$mode" = "break" || "$mode" = "long_break" ]]; then
-        notify-send -u critical "󰅶 ¡Click clock! marioneta" "¡A trabajar!" 
-      fi
-      echo "stopped|0|work" >"$STATE_FILE"
       IFS='|' read -r status elapsed mode <"$STATE_FILE"
       total=$(( WORK_MINS * 60 ))
       icon="󰔛"

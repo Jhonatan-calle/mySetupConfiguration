@@ -75,7 +75,6 @@
     "on-click-right": "~/.config/waybar/pomodoro.sh reset",
     "on-click-middle": "~/.config/waybar/pomodoro.sh switch",
     "tooltip": true,
-    "tooltip-format": "Click: pausar/reanudar\nClic derecho: reset\nClic medio: cambiar modo",
     "return-type": "json",
   },
 
