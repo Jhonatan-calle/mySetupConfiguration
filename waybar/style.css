@@ -40,6 +40,10 @@ window#waybar {
     color: #ff0000; /* Rojo alto contraste */
 }
 
+#battery.warning {
+    color: #ffaa00;
+}
+
 #battery.charging {
     color: #00ff00; /* Verde alto contraste */
 }

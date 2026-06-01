@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
-# Daemon independiente: maneja tiempo y lanza notificaciones
-# Iniciarlo con: ~/.config/waybar/pomodoro-daemon.sh &
-# O mejor: agrégar a autostart de tu WM
+# script ejecutado por hyprland (exec once creo)
 
 STATE_FILE="/tmp/waybar-pomodoro"
 WORK_MINS=30
@@ -23,6 +21,7 @@ while true; do
     IFS='|' read -r status elapsed mode < "$STATE_FILE"
 
     if [ "$status" = "running" ]; then
+
         if [ "$mode" = "work" ]; then
             total=$(( WORK_MINS * 60 ))
         elif [ "$mode" = "break" ]; then

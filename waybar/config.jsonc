@@ -69,19 +69,19 @@
   },
 
   "custom/pomodoro": {
-    "exec": "nice -n 19 ionice -c 3 ~/.config/waybar/pomodoro.sh",
+    "exec": "nice -n 19 ionice -c 3 ~/.config/scripts/pomodoro.sh",
     "interval": 1,
-    "on-click": "~/.config/waybar/pomodoro.sh toggle",
-    "on-click-right": "~/.config/waybar/pomodoro.sh reset",
-    "on-click-middle": "~/.config/waybar/pomodoro.sh switch",
+    "on-click": "~/.config/scripts/pomodoro.sh toggle",
+    "on-click-right": "~/.config/scripts/pomodoro.sh reset",
+    "on-click-middle": "~/.config/scripts/pomodoro.sh switch",
     "tooltip": true,
     "return-type": "json",
   },
 
   "custom/gastos": {
-    "exec": "~/.config/waybar/gastos.sh",
+    "exec": "~/.config/scripts/gastos.sh",
     "interval": 30,
-    "on-click": "~/.config/waybar/gastos.sh add",
+    "on-click": "~/.config/scripts/gastos.sh add",
     "return-type": "json",
     "tooltip": true,
   },

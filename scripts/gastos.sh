@@ -1,5 +1,5 @@
 #!/bin/bash
-
+# esto lo corre wayland/config.jsonc
 DATA_FILE="$HOME/OneDrive/varios/gastos/gastos.json"
 MES_ACTUAL=$(date +%Y-%m)
 

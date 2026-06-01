@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Este script lo corre waylan/config.jsonc
+
 
 # Archivo de estado
 STATE_FILE="/tmp/waybar-pomodoro"

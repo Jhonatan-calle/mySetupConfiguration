@@ -1,3 +1,4 @@
 
 [Default Applications]
 image/jpeg=app.zen_browser.zen.desktop
+x-scheme-handler/obsidian=obsidian.desktop
