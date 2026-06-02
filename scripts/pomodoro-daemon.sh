@@ -3,7 +3,7 @@
 
 STATE_FILE="/tmp/waybar-pomodoro"
 WORK_MINS=30
-BREAK_MINS=1
+BREAK_MINS=2
 LONG_BREAK_MINS=15
 PIDFILE="/tmp/waybar-pomodoro-daemon.pid"
 
@@ -36,6 +36,8 @@ while true; do
         if [ $spent -ge $total ]; then
             if [ "$mode" = "break" ] || [ "$mode" = "long_break" ]; then
                 notify-send -u critical "󰅶 ¡Click clock! marioneta" "¡A trabajar!"
+            else
+                notify-send -u critical "󰅶  ¡A descansar!"
             fi
             echo "stopped|0|work" > "$STATE_FILE"
         fi
