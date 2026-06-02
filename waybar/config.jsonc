@@ -4,10 +4,11 @@
   "height": 30,
   "modules-left": ["hyprland/workspaces"],
   "modules-right": [
-    "custom/gastos", 
-      //dependnciaas:
-      //  rofi-wayland
-      //  jq
+    "custom/scheduler",
+    "custom/gastos",
+    //dependnciaas:
+    //  rofi-wayland
+    //  jq
 
     "custom/pomodoro",
     "cpu",
@@ -83,6 +84,15 @@
     "interval": 30,
     "on-click": "~/.config/scripts/gastos.sh add",
     "return-type": "json",
+    "tooltip": true,
+  },
+
+  "custom/scheduler": {
+    "exec": "~/.local/bin/scheduler waybar",
+    "return-type": "json",
+    "interval": 60,
+    "on-click": "kitty --class scheduler -e scheduler tui",
+    "on-click-right": "kitty --class scheduler -e scheduler add",
     "tooltip": true,
   },
 }

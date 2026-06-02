@@ -76,3 +76,49 @@ window#waybar {
     border: 1px solid #b3b3b3;
     color: #e6e6e6;
 }
+
+
+/* Tarea normal */
+#custom-scheduler {
+    padding: 0 10px;
+    margin: 4px;
+    border-radius: 6px;
+    background-color: #000000;
+    border: 1px solid #b3b3b3;
+    color: #e6e6e6;
+}
+
+/* Sin tareas */
+#custom-scheduler.idle {
+    color: #b3b3b3;
+}
+
+/* Tarea normal — sin urgencia */
+#custom-scheduler.normal {
+    color: #e6e6e6;
+}
+
+/* Deadline en ≤7 días */
+#custom-scheduler.warning {
+    color: #ffaa00;
+    border-color: #ffaa00;
+}
+
+/* Deadline en ≤2 días */
+#custom-scheduler.critical {
+    color: #ff0000;
+    border-color: #ff0000;
+}
+
+/* Vencida */
+#custom-scheduler.overdue {
+    color: #ff0000;
+    border-color: #ff0000;
+    animation: pulse 1s infinite;
+}
+
+@keyframes pulse {
+    from { opacity: 1; }
+    50% { opacity: 0.4; }
+    to { opacity: 1; }
+}
