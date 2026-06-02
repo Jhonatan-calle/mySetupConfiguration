@@ -24,7 +24,7 @@ while true; do
         if [ "$CAPACITY" -le 15 ] && [ "$last" -gt 15 ]; then
             notify-send -u critical "󰂃 Batería crítica" "${CAPACITY}% — conectá el cargador"
             echo "$CAPACITY" > "$LAST_NOTIFIED"
-        elif [ "$CAPACITY" -le 30 ] && [ "$last" -gt 15 ]; then
+        elif [ "$CAPACITY" -le 30 ] && [ "$last" -gt 30 ]; then
             notify-send -u normal "󰁻 Batería baja ${CAPACITY}%"
             echo "$CAPACITY" > "$LAST_NOTIFIED"
         fi
