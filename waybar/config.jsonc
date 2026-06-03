@@ -91,8 +91,10 @@
     "exec": "~/.local/bin/scheduler waybar",
     "return-type": "json",
     "interval": 60,
+    "signal": 8, // SIGRTMIN+8
     "on-click": "kitty --class scheduler -e scheduler tui",
     "on-click-right": "kitty --class scheduler -e scheduler add",
+    "on-click-middle": "kitty --class scheduler -e scheduler focus status",
     "tooltip": true,
   },
 }
