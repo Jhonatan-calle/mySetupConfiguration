@@ -84,8 +84,13 @@ COLOR_TIPO = {
 def cargar_tareas():
     if not TASKS_FILE.exists():
         return []
-    with open(TASKS_FILE) as f:
-        return json.load(f)
+    try:
+        content = TASKS_FILE.read_text().strip()
+        if not content:
+            return []
+        return json.loads(content)
+    except json.JSONDecodeError:
+        return []
 
 def guardar_tareas(tareas):
     with open(TASKS_FILE, "w") as f:
@@ -403,15 +408,10 @@ def construir_menu(tareas, foco, plan, bandeja):
     if foco:
         opciones.append(("f", "cerrar bloque de foco", "cerrar_foco"))
     else:
-        # Sin foco: opciones según si hay plan
-        if plan:
-            tareas_hoy = [t for t in tareas if t["estado"] == "hoy"]
-            if tareas_hoy:
-                opciones.append(("f", "iniciar foco",  "iniciar_foco"))
-        else:
-            cola = [t for t in tareas if t["estado"] == "cola"]
-            if cola:
-                opciones.append(("f", "iniciar foco desde cola", "iniciar_foco"))
+        # Sin foco: disponible si hay cualquier tarea no terminada
+        cualquier_tarea = [t for t in tareas if t["estado"] not in ("listo", "descartado", "bandeja")]
+        if cualquier_tarea:
+            opciones.append(("f", "iniciar foco", "iniciar_foco"))
 
     # Plan
     if not plan:
@@ -654,25 +654,38 @@ def accion_iniciar_foco(tareas):
     seccion("Iniciar Bloque de Foco", AMARILLO)
     linea()
 
-    plan = plan_de_hoy()
-    if plan:
-        candidatas = [t for t in tareas if t["estado"] == "hoy"]
-    else:
-        candidatas = [t for t in tareas if t["estado"] == "cola" and not esta_bloqueada(t, tareas)]
+    # Todas las tareas activas — sin restricción de estado
+    candidatas = [
+        t for t in tareas
+        if t["estado"] not in ("listo", "descartado", "bandeja")
+    ]
 
     if not candidatas:
         print(f"  {AMARILLO}No hay tareas disponibles para enfocar.{R}")
         input(f"  {GRIS}Enter...{R}")
         return
 
-    ordenadas = sorted(candidatas, key=lambda t: calcular_prioridad(t, tareas), reverse=True)
+    # Las del plan de hoy primero, luego el resto por prioridad
+    plan = plan_de_hoy()
+    ids_plan = ([plan["principal"]] + plan.get("secundarias", [])) if plan else []
+
+    def orden_foco(t):
+        en_plan = t["id"] in ids_plan
+        return (0 if en_plan else 1, -calcular_prioridad(t, tareas))
+
+    ordenadas = sorted(candidatas, key=orden_foco)
     print()
     for i, t in enumerate(ordenadas):
-        tipo = etiqueta_tipo(t.get("tipo","fondo"))
-        cat  = etiqueta_cat(t.get("categoria","personal"))
-        dias = dias_hasta(t.get("limite"))
-        d_fmt= formato_dias(dias, t.get("limite"))
-        print(f"  {GRIS}{i+1}.{R}  {tipo} {cat}  {BLANCO}{nombre_corto(t['name'],36)}{R}  {d_fmt}")
+        tipo  = etiqueta_tipo(t.get("tipo","fondo"))
+        cat   = etiqueta_cat(t.get("categoria","personal"))
+        dias  = dias_hasta(t.get("limite"))
+        d_fmt = formato_dias(dias, t.get("limite"))
+        bloq  = f" {GRIS}🔒{R}" if esta_bloqueada(t, tareas) else ""
+        estado_tag = {
+            "hoy":  f" {CYAN}[plan]{R}",
+            "cola": f" {GRIS}[cola]{R}",
+        }.get(t["estado"], f" {GRIS}[{t['estado']}]{R}")
+        print(f"  {GRIS}{i+1}.{R}  {tipo} {cat}  {BLANCO}{nombre_corto(t['name'],32)}{R}  {d_fmt}{estado_tag}{bloq}")
 
     raw = leer_linea(f"\n  {GRIS}Número de tarea:{R} ").strip()
     try:
