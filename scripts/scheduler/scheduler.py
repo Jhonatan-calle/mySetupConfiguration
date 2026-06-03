@@ -1,59 +1,44 @@
 #!/usr/bin/env python3
 """
-CPU Scheduler personal — EDF con ciclo de vida completo.
-
-CICLO DE VIDA DE TAREA:
-  inbox → backlog → active → done | dropped
-
-COMANDOS:
-  scheduler.py                        → waybar JSON (tarea activa o en foco)
-  scheduler.py waybar                 → ídem
-  scheduler.py tui                    → vista completa en terminal
-  scheduler.py add                    → agregar tarea al INBOX
-  scheduler.py process                → procesar tareas del INBOX (clasificar)
-  scheduler.py plan                   → armar el Plan Diario desde el BACKLOG
-  scheduler.py plan show              → mostrar el plan de hoy
-  scheduler.py plan lock              → cerrar el plan (no acepta más tareas)
-  scheduler.py focus start <id> [min] → iniciar bloque de foco (default 90 min)
-  scheduler.py focus end <id>         → cerrar bloque de foco
-  scheduler.py focus status           → ver bloque activo
-  scheduler.py done <id>              → marcar tarea como completada
-  scheduler.py drop <id>              → descartar tarea conscientemente
-  scheduler.py eod                    → cierre de día (sweep de activas sin completar)
-  scheduler.py delete <id>            → eliminar tarea (solo inbox/backlog)
-  scheduler.py history                → historial de bloques de foco
+scheduler — Centro de control personal.
+Uso normal: scheduler tui   (o click en waybar)
+Waybar:     scheduler        (sin args, devuelve JSON)
 """
 
 import json
 import sys
+import os
+import tty
+import termios
+import subprocess
 from datetime import date, datetime, timedelta
 from pathlib import Path
-import subprocess
 
-# ── Configuración ──────────────────────────────────────────────────────────────
-BASE_DIR = Path.home() / "OneDrive" / "varios" / "scheduler"
+# ══════════════════════════════════════════════════════════════════════════════
+#  CONFIGURACIÓN
+# ══════════════════════════════════════════════════════════════════════════════
+BASE_DIR   = Path.home() / "OneDrive" / "varios" / "scheduler"
 BASE_DIR.mkdir(parents=True, exist_ok=True)
+TASKS_FILE = BASE_DIR / "tasks.json"
+PLAN_FILE  = BASE_DIR / "daily_plan.json"
+FOCUS_FILE = BASE_DIR / "focus_blocks.json"
 
-TASKS_FILE     = BASE_DIR / "tasks.json"
-PLAN_FILE      = BASE_DIR / "daily_plan.json"
-FOCUS_FILE     = BASE_DIR / "focus_blocks.json"   # historial de bloques
-
-# Tipos de tarea (reemplaza "categoría" como clasificador de peso)
-TASK_TYPES = {
-    "critica":   5,   # proyecto/app principal — máximo peso
-    "intensiva": 3,   # estudio profundo, aprendizaje activo
-    "fondo":     1,   # tareas administrativas, lectura ligera
+# Peso por tipo de tarea
+TIPOS = {
+    "critica":   5,
+    "intensiva": 3,
+    "fondo":     1,
 }
 
-# Peso base por categoría (dominio del contenido)
-CATEGORY_WEIGHTS = {
+# Peso por categoría
+CATEGORIAS = {
     "universidad": 1,
     "software":    4,
     "learning":    3,
     "personal":    2,
 }
 
-CATEGORY_ICONS = {
+ICONOS_CAT = {
     "universidad": "󰑴",
     "software":    "󰲋",
     "personal":    "󰋙",
@@ -61,870 +46,1100 @@ CATEGORY_ICONS = {
     "learning":    "󰿄",
 }
 
-TASK_TYPE_ICONS = {
-    "critica":   "🔴",
-    "intensiva": "🟡",
-    "fondo":     "🟢",
+ICONOS_TIPO = {
+    "critica":   "●",   # rojo
+    "intensiva": "●",   # amarillo
+    "fondo":     "●",   # verde
 }
 
-# Slots del Plan Diario
-PLAN_SLOTS = {
-    "principal":   1,   # solo 1 tarea crítica/intensiva pesada
-    "secundarias": 3,   # hasta 3 tareas de cualquier tipo
+# Colores ANSI
+R = "\033[0m"
+BOLD = "\033[1m"
+DIM  = "\033[2m"
+
+def fg(r,g,b):   return f"\033[38;2;{r};{g};{b}m"
+def bg(r,g,b):   return f"\033[48;2;{r};{g};{b}m"
+
+# Paleta
+ROJO    = fg(255, 100,  80)
+NARANJA = fg(255, 165,  60)
+AMARILLO= fg(255, 210,  80)
+VERDE   = fg(100, 210, 120)
+CYAN    = fg( 80, 200, 220)
+AZUL    = fg(100, 150, 255)
+MAGENTA = fg(200, 100, 255)
+GRIS    = fg(120, 120, 130)
+BLANCO  = fg(220, 220, 230)
+
+# Color por tipo
+COLOR_TIPO = {
+    "critica":   ROJO,
+    "intensiva": AMARILLO,
+    "fondo":     VERDE,
 }
 
-C = {
-    "red":    "\033[91m",
-    "yellow": "\033[93m",
-    "green":  "\033[92m",
-    "blue":   "\033[94m",
-    "cyan":   "\033[96m",
-    "magenta":"\033[95m",
-    "gray":   "\033[90m",
-    "bold":   "\033[1m",
-    "reset":  "\033[0m",
-}
-
-# ── Persistencia ───────────────────────────────────────────────────────────────
-def load_tasks():
+# ══════════════════════════════════════════════════════════════════════════════
+#  PERSISTENCIA
+# ══════════════════════════════════════════════════════════════════════════════
+def cargar_tareas():
     if not TASKS_FILE.exists():
         return []
     with open(TASKS_FILE) as f:
         return json.load(f)
 
-def save_tasks(tasks):
+def guardar_tareas(tareas):
     with open(TASKS_FILE, "w") as f:
-        json.dump(tasks, f, indent=2, ensure_ascii=False)
+        json.dump(tareas, f, indent=2, ensure_ascii=False)
 
-def load_plan():
+def cargar_plan():
     if not PLAN_FILE.exists():
         return None
     with open(PLAN_FILE) as f:
         return json.load(f)
 
-def save_plan(plan):
+def guardar_plan(plan):
     with open(PLAN_FILE, "w") as f:
         json.dump(plan, f, indent=2, ensure_ascii=False)
 
-def load_focus_history():
+def cargar_historial():
     if not FOCUS_FILE.exists():
         return []
     with open(FOCUS_FILE) as f:
         return json.load(f)
 
-def save_focus_history(history):
+def guardar_historial(h):
     with open(FOCUS_FILE, "w") as f:
-        json.dump(history, f, indent=2, ensure_ascii=False)
+        json.dump(h, f, indent=2, ensure_ascii=False)
 
-def next_id(tasks):
-    return max((t["id"] for t in tasks), default=0) + 1
+def proximo_id(tareas):
+    return max((t["id"] for t in tareas), default=0) + 1
 
-# ── Plan Diario ────────────────────────────────────────────────────────────────
-def get_today_plan():
-    """Retorna el plan de hoy, o None si no existe o es de otro día."""
-    plan = load_plan()
+# ══════════════════════════════════════════════════════════════════════════════
+#  LÓGICA DE PLAN Y FOCO
+# ══════════════════════════════════════════════════════════════════════════════
+def plan_de_hoy():
+    plan = cargar_plan()
     if not plan:
         return None
-    if plan.get("date") != date.today().isoformat():
+    if plan.get("fecha") != date.today().isoformat():
         return None
     return plan
 
-def create_plan(principal_id, secondary_ids, tasks):
-    """Crea un Plan Diario nuevo para hoy."""
-    today = date.today().isoformat()
-    plan = {
-        "date":         today,
-        "locked":       False,
-        "principal":    principal_id,
-        "secundarias":  secondary_ids,
-        "created_at":   datetime.now().isoformat(),
-    }
-    save_plan(plan)
-
-    # Mover tareas asignadas a ACTIVE
-    for t in tasks:
-        if t["id"] in ([principal_id] + secondary_ids):
-            t["status"] = "active"
-            t["activated_date"] = today
-    save_tasks(tasks)
-    return plan
-
-def is_plan_locked():
-    plan = get_today_plan()
-    return plan is not None and plan.get("locked", False)
-
-def get_active_focus_block(tasks):
-    """Retorna la tarea que está actualmente in_progress, si existe."""
-    for t in tasks:
-        if t.get("status") == "in_progress":
+def foco_activo(tareas):
+    for t in tareas:
+        if t.get("estado") == "en_foco":
             return t
     return None
 
-# ── Algoritmo de scheduling ────────────────────────────────────────────────────
-def days_until(deadline_str):
+def minutos_en_foco(tarea):
+    inicio = tarea.get("foco_inicio")
+    if not inicio:
+        return 0
+    delta = datetime.now() - datetime.fromisoformat(inicio)
+    return int(delta.total_seconds() / 60)
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  ALGORITMO EDF
+# ══════════════════════════════════════════════════════════════════════════════
+def dias_hasta(deadline_str):
     if not deadline_str:
         return 999
-    deadline = date.fromisoformat(deadline_str)
-    delta = (deadline - date.today()).days
+    d = date.fromisoformat(deadline_str)
+    delta = (d - date.today()).days
     return delta if delta != 0 else 0.5
 
-def is_blocked(task, tasks):
-    for dep_id in task.get("depends_on", []):
-        dep = next((t for t in tasks if t["id"] == dep_id), None)
-        if dep and dep["status"] not in ("done", "dropped"):
+def esta_bloqueada(tarea, tareas):
+    for dep_id in tarea.get("depende_de", []):
+        dep = next((t for t in tareas if t["id"] == dep_id), None)
+        if dep and dep["estado"] not in ("listo", "descartado"):
             return True
     return False
 
-def compute_priority(task, tasks):
-    """
-    P = (urgencia * tipo_peso * categoria_peso * distance_penalty) / max(días, 0.1)
-    Solo aplica a tareas en backlog o active. inbox/done/dropped → 0.
-    """
-    if task["status"] in ("done", "dropped", "inbox"):
+def calcular_prioridad(tarea, tareas):
+    if tarea["estado"] in ("listo", "descartado", "bandeja"):
         return 0
-    if is_blocked(task, tasks):
+    if esta_bloqueada(tarea, tareas):
         return 0
 
-    days         = days_until(task.get("deadline"))
-    urgency_base = task.get("urgency", 5)
-    tipo_weight  = TASK_TYPES.get(task.get("task_type", "fondo"), 1)
-    cat_weight   = CATEGORY_WEIGHTS.get(task.get("category", "personal"), 1.0)
+    dias        = dias_hasta(tarea.get("limite"))
+    urgencia    = tarea.get("urgencia", 5)
+    w_tipo      = TIPOS.get(tarea.get("tipo", "fondo"), 1)
+    w_cat       = CATEGORIAS.get(tarea.get("categoria", "personal"), 1.0)
 
-    # Excepción universidad: suprimir si no es urgente y hay otras tareas
-    if task.get("category") == "universidad" and days > 7 and urgency_base <= 6:
+    # Suprimir universidad no urgente si hay otras cosas
+    if tarea.get("categoria") == "universidad" and dias > 7 and urgencia <= 6:
         otras = [
-            t for t in tasks
-            if t["id"] != task["id"]
-            and t["status"] not in ("done", "dropped", "inbox")
-            and t.get("category") != "universidad"
+            t for t in tareas
+            if t["id"] != tarea["id"]
+            and t["estado"] not in ("listo", "descartado", "bandeja")
+            and t.get("categoria") != "universidad"
         ]
         if otras:
             return 0
 
-    distance_penalty = min(1.0, 30 / days) if days > 30 else 1.0
-    priority = (urgency_base * tipo_weight * cat_weight * distance_penalty) / max(days, 0.1)
+    penalizacion = min(1.0, 30 / dias) if dias > 30 else 1.0
+    p = (urgencia * w_tipo * w_cat * penalizacion) / max(dias, 0.1)
 
-    if 0 < days <= 7:
-        priority *= 1.5
+    if 0 < dias <= 7:
+        p *= 1.5
 
-    return round(priority, 4)
+    return round(p, 4)
 
-def get_sorted_backlog(tasks):
-    backlog = [t for t in tasks if t["status"] in ("backlog", "active")]
-    return sorted(backlog, key=lambda t: compute_priority(t, tasks), reverse=True)
+def cola_ordenada(tareas):
+    activas = [t for t in tareas if t["estado"] in ("cola", "hoy", "en_foco")]
+    return sorted(activas, key=lambda t: calcular_prioridad(t, tareas), reverse=True)
 
-def get_top_task(tasks):
-    """Tarea con mayor prioridad del plan de hoy, o del backlog si no hay plan."""
-    plan = get_today_plan()
+def tarea_principal(tareas):
+    plan = plan_de_hoy()
     if plan:
-        plan_ids = [plan["principal"]] + plan["secundarias"]
-        active = [t for t in tasks if t["id"] in plan_ids and t["status"] in ("active", "in_progress")]
-        if active:
-            return sorted(active, key=lambda t: compute_priority(t, tasks), reverse=True)[0]
-    # Fallback: top del backlog
-    sorted_b = get_sorted_backlog(tasks)
-    for t in sorted_b:
-        if not is_blocked(t, tasks):
+        ids_plan = [plan["principal"]] + plan.get("secundarias", [])
+        candidatas = [
+            t for t in tareas
+            if t["id"] in ids_plan and t["estado"] in ("hoy", "en_foco")
+        ]
+        if candidatas:
+            return sorted(candidatas, key=lambda t: calcular_prioridad(t, tareas), reverse=True)[0]
+    for t in cola_ordenada(tareas):
+        if not esta_bloqueada(t, tareas):
             return t
     return None
 
-# ── Comandos ───────────────────────────────────────────────────────────────────
-def cmd_add():
-    """Agrega una tarea al INBOX — mínima fricción, solo nombre requerido."""
-    tasks = load_tasks()
+# ══════════════════════════════════════════════════════════════════════════════
+#  LECTURA DE TECLADO (sin Enter)
+# ══════════════════════════════════════════════════════════════════════════════
 
-    print(f"\n{C['bold']}  Nueva tarea → INBOX{C['reset']}")
-    print(f"{C['gray']}  Solo nombre requerido. Clasificar después con `process`.{C['reset']}\n")
+def leer_tecla():
+    """Lee un solo carácter sin necesitar Enter."""
+    fd = sys.stdin.fileno()
+    old = termios.tcgetattr(fd)
+    try:
+        tty.setraw(fd)
+        ch = sys.stdin.read(1)
+        # Secuencias de escape (flechas, etc.) — ignorar por ahora
+        if ch == '\x1b':
+            sys.stdin.read(2)
+            return None
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old)
+     # limpiar caracteres pendientes
+    termios.tcflush(fd, termios.TCIFLUSH)
+    return ch
 
-    name = input("  Nombre: ").strip()
-    if not name:
-        print("  Nombre requerido.")
-        return
+def leer_linea(prompt=""):
+    """Lee una línea normal (con Enter). Restaura el modo canónico."""
+    print(prompt, end="", flush=True)
+    return input()
 
-    notes = input("  Notas rápidas (opcional): ").strip() or None
+# ══════════════════════════════════════════════════════════════════════════════
+#  HELPERS DE DISPLAY
+# ══════════════════════════════════════════════════════════════════════════════
+def limpiar():
+    os.system("clear")
 
-    task = {
-        "id":      next_id(tasks),
-        "name":    name,
-        "notes":   notes,
-        "status":  "inbox",
-        "created": date.today().isoformat(),
-        # Estos campos se completan en `process`:
-        "category":  None,
-        "task_type": None,
-        "deadline":  None,
-        "urgency":   5,
-        "depends_on": [],
-    }
-    tasks.append(task)
-    save_tasks(tasks)
-    print(f"\n  {C['cyan']}→ [{task['id']}] '{name}' en INBOX{C['reset']}\n")
+def ancho_terminal():
+    return os.get_terminal_size().columns
 
+def linea(char="─", color=GRIS):
+    w = min(ancho_terminal(), 72)
+    print(f"{color}{char * w}{R}")
 
-def cmd_process():
-    """Procesa tareas del INBOX: las clasifica y mueve al BACKLOG."""
-    tasks = load_tasks()
-    inbox = [t for t in tasks if t["status"] == "inbox"]
+def seccion(titulo, color=CYAN):
+    print(f"\n{color}{BOLD} {titulo}{R}")
 
-    if not inbox:
-        print(f"\n  {C['green']}INBOX vacío 🎉{C['reset']}\n")
-        return
+def barra_progreso(pct, ancho=20):
+    lleno = int(pct / 100 * ancho)
+    vacio = ancho - lleno
+    return f"{AMARILLO}{'█' * lleno}{GRIS}{'░' * vacio}{R}"
 
-    print(f"\n{C['bold']}  Procesando INBOX ({len(inbox)} tarea/s){C['reset']}")
-    print(f"{C['gray']}  Clasificá cada tarea para moverla al BACKLOG.{C['reset']}\n")
+def formato_dias(dias, con_limite):
+    if not con_limite:
+        return f"{GRIS}sin fecha{R}"
+    d = int(dias)
+    if dias <= 0:
+        return f"{ROJO}{BOLD}¡VENCIDA!{R}"
+    elif dias <= 2:
+        return f"{ROJO}{d}d{R}"
+    elif dias <= 7:
+        return f"{AMARILLO}{d}d{R}"
+    else:
+        return f"{GRIS}{d}d{R}"
 
-    for task in inbox:
-        print(f"{C['bold']}  [{task['id']}] {task['name']}{C['reset']}")
-        if task.get("notes"):
-            print(f"  {C['gray']}  Nota: {task['notes']}{C['reset']}")
+def etiqueta_tipo(tipo):
+    color = COLOR_TIPO.get(tipo, GRIS)
+    return f"{color}{ICONOS_TIPO.get(tipo,'?')}{R}"
 
-        action = input("  [b]acklog / [d]rop / [s]kip: ").strip().lower()
-        if action == "d":
-            task["status"] = "dropped"
-            task["dropped"] = date.today().isoformat()
-            task["drop_reason"] = input("  Motivo del descarte: ").strip() or "sin motivo"
-            print(f"  {C['gray']}  → DROPPED{C['reset']}")
-            continue
-        elif action == "s":
-            print(f"  {C['gray']}  → Saltada{C['reset']}")
-            continue
+def etiqueta_cat(cat):
+    return ICONOS_CAT.get(cat, "?")
 
-        # Clasificar para BACKLOG
-        while True:
-            print(f"  Tipo [{'/'.join(TASK_TYPES.keys())}]: ", end="")
-            task_type = input().strip().lower() or "fondo"
-            if task_type in TASK_TYPES:
-                break
-            print("  Tipo inválido.")
+def nombre_corto(nombre, max_len=38):
+    return nombre[:max_len-1] + "…" if len(nombre) > max_len else nombre
 
-        while True:
-            print(f"  Categoría [{'/'.join(CATEGORY_WEIGHTS.keys())}]: ", end="")
-            category = input().strip().lower() or "personal"
-            if category in CATEGORY_WEIGHTS:
-                break
-            print("  Categoría inválida.")
+# ══════════════════════════════════════════════════════════════════════════════
+#  SECCIONES DE LA PANTALLA PRINCIPAL
+# ══════════════════════════════════════════════════════════════════════════════
+def mostrar_foco(foco):
+    elapsed  = minutos_en_foco(foco)
+    planned  = foco.get("foco_duracion", 90)
+    remaining = max(0, planned - elapsed)
+    pct      = min(100, int(elapsed / planned * 100))
+    barra    = barra_progreso(pct)
 
-        while True:
-            deadline = input("  Deadline (YYYY-MM-DD, opcional): ").strip()
-            if not deadline:
-                deadline = None
-                break
-            try:
-                date.fromisoformat(deadline)
-                break
-            except ValueError:
-                print("  Fecha inválida.")
+    seccion("⚡  EN FOCO AHORA", AMARILLO)
+    linea("─", AMARILLO)
+    tipo_col = COLOR_TIPO.get(foco.get("tipo","fondo"), GRIS)
+    print(f"  {tipo_col}{BOLD}{nombre_corto(foco['name'], 44)}{R}")
+    print(f"  {barra}  {AMARILLO}{elapsed}m{R} transcurridos  ·  {CYAN}{remaining}m{R} restantes")
+    linea("─", AMARILLO)
 
-        urgency_raw = input("  Urgencia 1-10 [5]: ").strip() or "5"
-        try:
-            urgency = max(1, min(10, int(urgency_raw)))
-        except ValueError:
-            urgency = 5
-
-        # Dependencias opcionales
-        backlog_tasks = [t for t in tasks if t["status"] in ("backlog", "active") and t["id"] != task["id"]]
-        if backlog_tasks:
-            print(f"\n  {C['gray']}Tareas en backlog:{C['reset']}")
-            for bt in backlog_tasks:
-                print(f"    [{bt['id']}] {bt['name']}")
-        dep_raw = input("  Depende de (IDs separados por coma, opcional): ").strip()
-        depends_on = []
-        if dep_raw:
-            try:
-                depends_on = [int(x.strip()) for x in dep_raw.split(",")]
-            except ValueError:
-                pass
-
-        task.update({
-            "status":     "backlog",
-            "task_type":  task_type,
-            "category":   category,
-            "deadline":   deadline,
-            "urgency":    urgency,
-            "depends_on": depends_on,
-            "processed":  date.today().isoformat(),
-        })
-        p = compute_priority(task, tasks)
-        print(f"  {C['green']}  → BACKLOG (prioridad: {p:.3f}){C['reset']}\n")
-
-    save_tasks(tasks)
-
-
-def cmd_plan(sub=None):
-    """Gestión del Plan Diario."""
-    tasks = load_tasks()
-
-    if sub == "show":
-        _plan_show(tasks)
-        return
-    if sub == "lock":
-        _plan_lock(tasks)
-        return
-
-    # Armar plan
-    existing = get_today_plan()
-    if existing and existing.get("locked"):
-        print(f"\n  {C['red']}El plan de hoy ya está cerrado.{C['reset']}")
-        print(f"  Usá `eod` al terminar el día para reiniciarlo.\n")
-        return
-
-    backlog = [t for t in tasks if t["status"] == "backlog" and not is_blocked(t, tasks)]
-    if not backlog:
-        print(f"\n  {C['yellow']}No hay tareas en el BACKLOG para planificar.{C['reset']}\n")
-        return
-
-    sorted_b = sorted(backlog, key=lambda t: compute_priority(t, tasks), reverse=True)
-
-    print(f"\n{C['bold']}  Armando Plan Diario — {date.today().isoformat()}{C['reset']}")
-    print(f"{C['gray']}  1 tarea principal + hasta 3 secundarias.{C['reset']}\n")
-
-    print(f"{C['bold']}  BACKLOG por prioridad:{C['reset']}")
-    for t in sorted_b:
-        p = compute_priority(t, tasks)
-        tipo_icon = TASK_TYPE_ICONS.get(t.get("task_type", "fondo"), "?")
-        cat_icon  = CATEGORY_ICONS.get(t.get("category", "personal"), "?")
-        days      = days_until(t.get("deadline"))
-        d_str     = f"{int(days)}d" if t.get("deadline") else "∞"
-        print(f"  [{t['id']}] {tipo_icon}{cat_icon} {t['name']}  {C['gray']}[{d_str}] p={p:.3f}{C['reset']}")
-
-    print()
-
-    # Slot principal (solo critica o intensiva)
-    while True:
-        pid_raw = input(f"  {C['bold']}Tarea PRINCIPAL{C['reset']} (ID, solo critica/intensiva): ").strip()
-        try:
-            pid = int(pid_raw)
-            principal = next((t for t in sorted_b if t["id"] == pid), None)
-            if not principal:
-                print("  ID no encontrado en backlog.")
-                continue
-            if principal.get("task_type") == "fondo":
-                print(f"  {C['yellow']}  ⚠ Slot principal rechaza tareas de tipo 'fondo'.{C['reset']}")
-                override = input("  ¿Forzar igualmente? [s/N]: ").strip().lower()
-                if override != "s":
-                    continue
-            break
-        except ValueError:
-            print("  Ingresá un ID numérico.")
-
-    # Slots secundarios
-    secondary_ids = []
-    remaining = [t for t in sorted_b if t["id"] != pid]
-    print(f"\n  Tareas SECUNDARIAS (hasta {PLAN_SLOTS['secundarias']}, Enter para terminar):")
-    for i in range(PLAN_SLOTS["secundarias"]):
-        sid_raw = input(f"  Secundaria {i+1} (ID o Enter para omitir): ").strip()
-        if not sid_raw:
-            break
-        try:
-            sid = int(sid_raw)
-            if any(t["id"] == sid for t in remaining):
-                secondary_ids.append(sid)
-            else:
-                print("  ID no válido, omitido.")
-        except ValueError:
-            print("  ID inválido, omitido.")
-
-    plan = create_plan(pid, secondary_ids, tasks)
-    total = 1 + len(secondary_ids)
-    print(f"\n  {C['green']}✓ Plan creado con {total} tarea/s activas.{C['reset']}")
-    print(f"  {C['gray']}Usá `plan lock` cuando empieces el día.{C['reset']}\n")
-
-
-def _plan_show(tasks):
-    plan = get_today_plan()
+def mostrar_plan(tareas):
+    plan = plan_de_hoy()
     if not plan:
-        print(f"\n  {C['yellow']}No hay plan para hoy. Usá `plan` para crearlo.{C['reset']}\n")
-        return
+        return False
 
-    locked_str = f"{C['red']}CERRADO{C['reset']}" if plan.get("locked") else f"{C['green']}abierto{C['reset']}"
-    print(f"\n{C['bold']}  Plan Diario — {plan['date']}  [{locked_str}{C['bold']}]{C['reset']}")
-    print(f"{C['gray']}{'─' * 50}{C['reset']}")
+    bloqueado_str = f" {ROJO}[CERRADO]{R}" if plan.get("cerrado") else f" {VERDE}[abierto]{R}"
+    seccion(f"📋  PLAN DE HOY{bloqueado_str}", CYAN)
 
-    all_ids = [plan["principal"]] + plan["secundarias"]
-    for i, tid in enumerate(all_ids):
-        t = next((x for x in tasks if x["id"] == tid), None)
+    ids_plan = [plan["principal"]] + plan.get("secundarias", [])
+    numeracion = []
+    for i, tid in enumerate(ids_plan):
+        t = next((x for x in tareas if x["id"] == tid), None)
         if not t:
             continue
-        slot_label = "PRINCIPAL" if i == 0 else f"SEC {i}"
-        tipo_icon  = TASK_TYPE_ICONS.get(t.get("task_type", "fondo"), "?")
-        status_color = {
-            "active":      C["cyan"],
-            "in_progress": C["yellow"],
-            "done":        C["green"],
-            "dropped":     C["gray"],
-        }.get(t["status"], C["reset"])
-        print(f"  {C['gray']}{slot_label}{C['reset']}  {tipo_icon} {status_color}[{t['id']}] {t['name']}{C['reset']}  {C['gray']}({t['status']}){C['reset']}")
+        slot_label = f"{MAGENTA}PRINCIPAL{R}" if i == 0 else f"{GRIS}  SEC {i}  {R}"
+        tipo_col   = COLOR_TIPO.get(t.get("tipo","fondo"), GRIS)
+        estado_str = {
+            "hoy":       f"{CYAN}hoy{R}",
+            "en_foco":   f"{AMARILLO}⚡ en foco{R}",
+            "listo":     f"{VERDE}✓ listo{R}",
+            "descartado":f"{GRIS}✗ descartado{R}",
+        }.get(t["estado"], t["estado"])
+        dias  = dias_hasta(t.get("limite"))
+        d_fmt = formato_dias(dias, t.get("limite"))
+        cat   = etiqueta_cat(t.get("categoria","personal"))
 
-    focus = get_active_focus_block(tasks)
-    if focus:
-        elapsed = _focus_elapsed(focus)
-        print(f"\n  {C['yellow']}⚡ EN FOCO: [{focus['id']}] {focus['name']}  ({elapsed} min transcurridos){C['reset']}")
-    print()
+        print(f"  {slot_label}  {tipo_col}●{R} {cat} {BLANCO}{nombre_corto(t['name'],36)}{R}  {d_fmt}  {estado_str}")
+        numeracion.append(t)
+    return numeracion
 
+def mostrar_bandeja(tareas):
+    bandeja = [t for t in tareas if t["estado"] == "bandeja"]
+    if not bandeja:
+        return []
+    seccion(f"📥  BANDEJA  ({len(bandeja)} sin procesar)", NARANJA)
+    for t in bandeja:
+        print(f"  {GRIS}○  {nombre_corto(t['name'], 50)}{R}  {DIM}{(t.get('notas') or '')[:30]}{R}")
+    return bandeja
 
-def _plan_lock(tasks):
-    plan = get_today_plan()
-    if not plan:
-        print(f"\n  {C['yellow']}No hay plan para hoy.{C['reset']}\n")
+def mostrar_cola(tareas):
+    cola = [t for t in tareas if t["estado"] == "cola"]
+    if not cola:
+        return []
+    ordenadas = sorted(cola, key=lambda t: calcular_prioridad(t, tareas), reverse=True)
+    seccion(f"📦  COLA  ({len(cola)} tareas)", AZUL)
+
+    numeracion = []
+    for i, t in enumerate(ordenadas):
+        p     = calcular_prioridad(t, tareas)
+        dias  = dias_hasta(t.get("limite"))
+        d_fmt = formato_dias(dias, t.get("limite"))
+        tipo  = etiqueta_tipo(t.get("tipo","fondo"))
+        cat   = etiqueta_cat(t.get("categoria","personal"))
+        bloq  = f"  {GRIS}🔒{R}" if esta_bloqueada(t, tareas) else ""
+        idx   = f"{GRIS}{i+1:2}.{R}"
+        print(f"  {idx}  {tipo} {cat}  {BLANCO}{nombre_corto(t['name'],34)}{R}  {d_fmt}  {GRIS}p={p:.2f}{R}{bloq}")
+        numeracion.append(t)
+    return numeracion
+
+def mostrar_completadas_recientes(tareas):
+    listas = [t for t in tareas if t["estado"] == "listo"]
+    if not listas:
         return
-    if plan.get("locked"):
-        print(f"\n  Plan ya está cerrado.\n")
-        return
-    plan["locked"] = True
-    plan["locked_at"] = datetime.now().isoformat()
-    save_plan(plan)
-    print(f"\n  {C['green']}✓ Plan cerrado. No se pueden agregar más tareas hoy.{C['reset']}\n")
+    recientes = sorted(listas, key=lambda t: t.get("completado",""), reverse=True)[:3]
+    print(f"\n{GRIS}  Completadas recientemente:")
+    for t in recientes:
+        print(f"    ✓  {nombre_corto(t['name'],44)}  {DIM}{t.get('completado','')}{R}")
+    print(R, end="")
 
+def mostrar_stats_rapidas(tareas):
+    total_cola  = sum(1 for t in tareas if t["estado"] == "cola")
+    total_hoy   = sum(1 for t in tareas if t["estado"] == "hoy")
+    total_foco  = sum(1 for t in tareas if t["estado"] == "en_foco")
+    total_listo = sum(1 for t in tareas if t["estado"] == "listo")
+    bandeja_n   = sum(1 for t in tareas if t["estado"] == "bandeja")
 
-def _focus_elapsed(task):
-    """Minutos transcurridos desde que empezó el bloque de foco."""
-    started = task.get("focus_started")
-    if not started:
-        return 0
-    delta = datetime.now() - datetime.fromisoformat(started)
-    return int(delta.total_seconds() / 60)
+    hist = cargar_historial()
+    hoy_str = date.today().isoformat()
+    min_hoy = sum(b.get("minutos_reales",0) for b in hist if b.get("fecha") == hoy_str)
 
+    partes = []
+    if bandeja_n:  partes.append(f"{NARANJA}📥 {bandeja_n} en bandeja{R}")
+    if total_foco: partes.append(f"{AMARILLO}⚡ {total_foco} en foco{R}")
+    if total_hoy:  partes.append(f"{CYAN}📋 {total_hoy} en plan{R}")
+    if total_cola: partes.append(f"{AZUL}📦 {total_cola} en cola{R}")
+    if total_listo:partes.append(f"{VERDE}✓ {total_listo} listos{R}")
+    if min_hoy:    partes.append(f"{MAGENTA}⏱ {min_hoy}m foco hoy{R}")
 
-# ── Focus Blocks ───────────────────────────────────────────────────────────────
-def cmd_focus(sub, args):
-    tasks = load_tasks()
+    if partes:
+        print(f"\n  {'  ·  '.join(partes)}")
 
-    if sub == "start":
-        if not args:
-            print("  Uso: focus start <id> [minutos]")
-            return
-        try:
-            tid = int(args[0])
-            duration = int(args[1]) if len(args) > 1 else 90
-        except ValueError:
-            print("  ID o duración inválidos.")
-            return
+# ══════════════════════════════════════════════════════════════════════════════
+#  MENÚ CONTEXTUAL DINÁMICO
+# ══════════════════════════════════════════════════════════════════════════════
+def construir_menu(tareas, foco, plan, bandeja):
+    """
+    Devuelve lista de (tecla, descripción, acción_id) según el estado actual.
+    Las acciones disponibles cambian según contexto.
+    """
+    opciones = []
 
-        # Solo una tarea puede estar in_progress a la vez
-        current_focus = get_active_focus_block(tasks)
-        if current_focus:
-            print(f"\n  {C['red']}Ya hay un bloque activo: [{current_focus['id']}] {current_focus['name']}{C['reset']}")
-            print(f"  Cerralo primero con `focus end {current_focus['id']}`\n")
-            return
+    # Siempre disponible
+    opciones.append(("n", "nueva tarea",     "nueva"))
 
-        target = next((t for t in tasks if t["id"] == tid), None)
-        if not target:
-            print(f"  Tarea {tid} no encontrada.")
-            return
-        if target["status"] not in ("active", "backlog"):
-            print(f"  {C['yellow']}La tarea debe estar ACTIVE o BACKLOG para iniciar foco (estado actual: {target['status']}).{C['reset']}")
-            return
+    # Bandeja pendiente
+    if bandeja:
+        opciones.append(("i", f"procesar bandeja ({len(bandeja)})", "procesar"))
 
-        prev_status = target["status"]
-        target["status"] = "in_progress"
-        target["focus_started"] = datetime.now().isoformat()
-        target["focus_duration"] = duration
-        target["_prev_status"] = prev_status
-        save_tasks(tasks)
-
-        ends_at = (datetime.now() + timedelta(minutes=duration)).strftime("%H:%M")
-        print(f"\n  {C['yellow']}⚡ FOCO iniciado: [{tid}] {target['name']}{C['reset']}")
-        print(f"  {C['gray']}Duración: {duration} min  |  Termina ~{ends_at}{C['reset']}\n")
-
-    elif sub == "end":
-        if not args:
-            print("  Uso: focus end <id>")
-            return
-        try:
-            tid = int(args[0])
-        except ValueError:
-            print("  ID inválido.")
-            return
-
-        target = next((t for t in tasks if t["id"] == tid), None)
-        if not target or target["status"] != "in_progress":
-            print(f"  Tarea {tid} no está en foco.")
-            return
-
-        elapsed = _focus_elapsed(target)
-        print(f"\n  Bloque de foco: [{tid}] {target['name']}  ({elapsed} min)")
-        outcome = input("  ¿Resultado? [d]one / [c]ontinúa mañana / [a]ctive (necesita más hoy): ").strip().lower()
-
-        # Guardar en historial
-        history = load_focus_history()
-        history.append({
-            "task_id":   tid,
-            "task_name": target["name"],
-            "date":      date.today().isoformat(),
-            "started":   target.get("focus_started"),
-            "ended":     datetime.now().isoformat(),
-            "elapsed_min": elapsed,
-            "planned_min": target.get("focus_duration", 90),
-            "outcome":   outcome,
-        })
-        save_focus_history(history)
-
-        # Limpiar campos de foco
-        target.pop("focus_started", None)
-        target.pop("focus_duration", None)
-        prev = target.pop("_prev_status", "active")
-
-        if outcome == "d":
-            target["status"] = "done"
-            target["completed"] = date.today().isoformat()
-            print(f"  {C['green']}✓ [{tid}] '{target['name']}' completada 🎉{C['reset']}")
-            _show_unblocked(tid, tasks)
-        elif outcome == "c":
-            target["status"] = "backlog"
-            target.pop("activated_date", None)
-            print(f"  {C['cyan']}→ Vuelve al BACKLOG para mañana.{C['reset']}")
+    # Foco activo: cerrar foco es prioritario
+    if foco:
+        opciones.append(("f", "cerrar bloque de foco", "cerrar_foco"))
+    else:
+        # Sin foco: opciones según si hay plan
+        if plan:
+            tareas_hoy = [t for t in tareas if t["estado"] == "hoy"]
+            if tareas_hoy:
+                opciones.append(("f", "iniciar foco",  "iniciar_foco"))
         else:
-            target["status"] = prev if prev in ("active", "backlog") else "active"
-            print(f"  {C['cyan']}→ Sigue ACTIVE para otro bloque hoy.{C['reset']}")
+            cola = [t for t in tareas if t["estado"] == "cola"]
+            if cola:
+                opciones.append(("f", "iniciar foco desde cola", "iniciar_foco"))
 
-        save_tasks(tasks)
+    # Plan
+    if not plan:
+        cola = [t for t in tareas if t["estado"] == "cola"]
+        if cola:
+            opciones.append(("p", "armar plan de hoy", "armar_plan"))
+    else:
+        if not plan.get("cerrado"):
+            opciones.append(("p", "cerrar plan del día", "cerrar_plan"))
+
+    # Marcar como lista / descartar (solo si hay tareas activas)
+    activas = [t for t in tareas if t["estado"] in ("hoy","cola","en_foco")]
+    if activas:
+        opciones.append(("l", "marcar como lista",   "marcar_lista"))
+        opciones.append(("x", "descartar tarea",      "descartar"))
+
+    # Cierre de día (solo si hay tareas en "hoy" o "en_foco")
+    fin_dia = [t for t in tareas if t["estado"] in ("hoy","en_foco")]
+    if fin_dia:
+        opciones.append(("z", "cierre de día",        "cierre_dia"))
+
+    # Historial siempre
+    opciones.append(("h", "historial de foco",    "historial"))
+    opciones.append(("q", "salir",                "salir"))
+
+    return opciones
+
+def mostrar_menu(opciones):
+    print()
+    linea("─", GRIS)
+    partes = []
+    for tecla, desc, _ in opciones:
+        partes.append(f"{CYAN}{BOLD}[{tecla}]{R} {BLANCO}{desc}{R}")
+    # Imprimir en filas de hasta 3
+    por_fila = 3
+    for i in range(0, len(partes), por_fila):
+        fila = partes[i:i+por_fila]
+        print("  " + "    ".join(fila))
+    linea("─", GRIS)
+    print(f"  {GRIS}tecla → {R}", end="", flush=True)
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  ACCIONES INTERACTIVAS
+# ══════════════════════════════════════════════════════════════════════════════
+def accion_nueva(tareas):
+    limpiar()
+    seccion("Nueva tarea → Bandeja", NARANJA)
+    linea()
+    print(f"  {GRIS}Solo el nombre es obligatorio. Clasificás después.{R}\n")
+
+    nombre = leer_linea(f"  {BLANCO}Nombre:{R} ").strip()
+    if not nombre:
+        print(f"  {ROJO}Nombre requerido.{R}")
+        input(f"  {GRIS}Enter para continuar...{R}")
+        return
+
+    notas = leer_linea(f"  {GRIS}Nota rápida (opcional):{R} ").strip() or None
+
+    tarea = {
+        "id":        proximo_id(tareas),
+        "name":      nombre,
+        "notas":     notas,
+        "estado":    "bandeja",
+        "creado":    date.today().isoformat(),
+        "categoria": None,
+        "tipo":      None,
+        "limite":    None,
+        "urgencia":  5,
+        "depende_de": [],
+    }
+    tareas.append(tarea)
+    guardar_tareas(tareas)
+    print(f"\n  {VERDE}✓ [{tarea['id']}] '{nombre}' en bandeja{R}\n")
+    input(f"  {GRIS}Enter para continuar...{R}")
+
+
+def accion_procesar(tareas):
+    bandeja = [t for t in tareas if t["estado"] == "bandeja"]
+    if not bandeja:
+        return
+
+    for tarea in bandeja:
+        limpiar()
+        seccion(f"Procesar bandeja — {len(bandeja)} pendientes", NARANJA)
+        linea()
+        print(f"\n  {BLANCO}{BOLD}{nombre_corto(tarea['name'],52)}{R}")
+        if tarea.get("notas"):
+            print(f"  {GRIS}Nota: {tarea['notas']}{R}")
+
+        print(f"\n  {CYAN}[b]{R} → cola   {GRIS}[x]{R} → descartar   {GRIS}[s]{R} → saltar\n")
+        print(f"  {GRIS}tecla → {R}", end="", flush=True)
+        ch = leer_tecla()
+        print(ch or "")
+
+        if ch == "x":
+            motivo = leer_linea(f"  {GRIS}Motivo del descarte:{R} ").strip() or "sin motivo"
+            tarea.update({"estado": "descartado", "descartado": date.today().isoformat(), "motivo_descarte": motivo})
+            print(f"  {GRIS}✗ Descartada{R}")
+            guardar_tareas(tareas)
+            continue
+        elif ch == "s":
+            print(f"  {GRIS}→ Saltada{R}")
+            continue
+
+        # → cola: clasificar
+        print(f"\n  {BOLD}Tipo:{R}  {ROJO}[c]{R} crítica   {AMARILLO}[i]{R} intensiva   {VERDE}[f]{R} fondo\n")
+        print(f"  {GRIS}tecla → {R}", end="", flush=True)
+        tipo_ch = leer_tecla()
+        tipo = {"c": "critica", "i": "intensiva", "f": "fondo"}.get(tipo_ch, "fondo")
+        print(tipo)
+
+        print(f"\n  {BOLD}Categoría:{R}")
+        cats = list(CATEGORIAS.keys())
+        for idx, cat in enumerate(cats):
+            print(f"    {CYAN}[{idx+1}]{R} {cat}")
+        print(f"  {GRIS}número → {R}", end="", flush=True)
+        cat_ch = leer_tecla()
+        try:
+            categoria = cats[int(cat_ch)-1]
+        except (ValueError, IndexError):
+            categoria = "personal"
+        print(categoria)
+
+        limite = leer_linea(f"\n  {GRIS}Límite AAAA-MM-DD (Enter para omitir):{R} ").strip() or None
+        if limite:
+            try:
+                date.fromisoformat(limite)
+            except ValueError:
+                print(f"  {ROJO}Fecha inválida, ignorada.{R}")
+                limite = None
+
+        urg_raw = leer_linea(f"  {GRIS}Urgencia 1-10 [5]:{R} ").strip() or "5"
+        try:
+            urgencia = max(1, min(10, int(urg_raw)))
+        except ValueError:
+            urgencia = 5
+
+        tarea.update({
+            "estado":    "cola",
+            "tipo":      tipo,
+            "categoria": categoria,
+            "limite":    limite,
+            "urgencia":  urgencia,
+            "procesado": date.today().isoformat(),
+        })
+        p = calcular_prioridad(tarea, tareas)
+        print(f"\n  {VERDE}✓ → Cola  (prioridad: {p:.3f}){R}")
+        guardar_tareas(tareas)
+
+    print(f"\n  {VERDE}Bandeja procesada{R}")
+    input(f"  {GRIS}Enter para continuar...{R}")
+
+
+def accion_armar_plan(tareas):
+    limpiar()
+    seccion("Armar Plan de Hoy", CYAN)
+    linea()
+
+    cola = [t for t in tareas if t["estado"] == "cola" and not esta_bloqueada(t, tareas)]
+    if not cola:
+        print(f"  {AMARILLO}No hay tareas en la cola.{R}")
+        input(f"  {GRIS}Enter...{R}")
+        return
+
+    ordenadas = sorted(cola, key=lambda t: calcular_prioridad(t, tareas), reverse=True)
+    print(f"\n  {BOLD}Cola ordenada por prioridad:{R}\n")
+    for i, t in enumerate(ordenadas):
+        p    = calcular_prioridad(t, tareas)
+        tipo = etiqueta_tipo(t.get("tipo","fondo"))
+        cat  = etiqueta_cat(t.get("categoria","personal"))
+        dias = dias_hasta(t.get("limite"))
+        d_fmt= formato_dias(dias, t.get("limite"))
+        print(f"  {GRIS}{i+1:2}.{R}  {tipo} {cat}  {BLANCO}{nombre_corto(t['name'],34)}{R}  {d_fmt}  {GRIS}p={p:.2f}{R}")
+
+    print(f"\n  {MAGENTA}PRINCIPAL{R} — 1 tarea (crítica o intensiva recomendada)")
+    pid_raw = leer_linea(f"  {GRIS}Número:{R} ").strip()
+    try:
+        principal = ordenadas[int(pid_raw)-1]
+    except (ValueError, IndexError):
+        print(f"  {ROJO}Número inválido.{R}")
+        input(f"  {GRIS}Enter...{R}")
+        return
+
+    if principal.get("tipo") == "fondo":
+        print(f"  {AMARILLO}⚠ El slot principal funciona mejor con tareas críticas o intensivas.{R}")
+        ch = leer_tecla() if leer_linea(f"  {GRIS}¿Continuar igual? [s/N]:{R} ").strip().lower() == "s" else "n"
+        if ch == "n":
+            input(f"  {GRIS}Enter...{R}")
+            return
+
+    secundarias_ids = []
+    restantes = [t for t in ordenadas if t["id"] != principal["id"]]
+    print(f"\n  {GRIS}SECUNDARIAS{R} — hasta 3 (Enter para terminar)")
+    for slot in range(1, 4):
+        raw = leer_linea(f"  Secundaria {slot} (número o Enter): ").strip()
+        if not raw:
+            break
+        try:
+            t = restantes[int(raw)-1]
+            secundarias_ids.append(t["id"])
+        except (ValueError, IndexError):
+            print(f"  {GRIS}Número inválido, omitido.{R}")
+
+    # Crear plan y mover tareas a "hoy"
+    plan = {
+        "fecha":       date.today().isoformat(),
+        "cerrado":     False,
+        "principal":   principal["id"],
+        "secundarias": secundarias_ids,
+        "creado_en":   datetime.now().isoformat(),
+    }
+    guardar_plan(plan)
+
+    todos_ids = [principal["id"]] + secundarias_ids
+    for t in tareas:
+        if t["id"] in todos_ids:
+            t["estado"] = "hoy"
+            t["fecha_activacion"] = date.today().isoformat()
+    guardar_tareas(tareas)
+
+    total = len(todos_ids)
+    print(f"\n  {VERDE}✓ Plan creado — {total} tarea/s activas para hoy{R}")
+    print(f"  {GRIS}Usá [p] para cerrar el plan cuando empieces.{R}\n")
+    input(f"  {GRIS}Enter para continuar...{R}")
+
+
+def accion_cerrar_plan():
+    plan = plan_de_hoy()
+    if not plan:
+        return
+    plan["cerrado"]    = True
+    plan["cerrado_en"] = datetime.now().isoformat()
+    guardar_plan(plan)
+    print(f"\n  {VERDE}✓ Plan cerrado — no se pueden agregar más tareas hoy.{R}\n")
+    input(f"  {GRIS}Enter para continuar...{R}")
+
+
+def accion_iniciar_foco(tareas):
+    limpiar()
+    seccion("Iniciar Bloque de Foco", AMARILLO)
+    linea()
+
+    plan = plan_de_hoy()
+    if plan:
+        candidatas = [t for t in tareas if t["estado"] == "hoy"]
+    else:
+        candidatas = [t for t in tareas if t["estado"] == "cola" and not esta_bloqueada(t, tareas)]
+
+    if not candidatas:
+        print(f"  {AMARILLO}No hay tareas disponibles para enfocar.{R}")
+        input(f"  {GRIS}Enter...{R}")
+        return
+
+    ordenadas = sorted(candidatas, key=lambda t: calcular_prioridad(t, tareas), reverse=True)
+    print()
+    for i, t in enumerate(ordenadas):
+        tipo = etiqueta_tipo(t.get("tipo","fondo"))
+        cat  = etiqueta_cat(t.get("categoria","personal"))
+        dias = dias_hasta(t.get("limite"))
+        d_fmt= formato_dias(dias, t.get("limite"))
+        print(f"  {GRIS}{i+1}.{R}  {tipo} {cat}  {BLANCO}{nombre_corto(t['name'],36)}{R}  {d_fmt}")
+
+    raw = leer_linea(f"\n  {GRIS}Número de tarea:{R} ").strip()
+    try:
+        tarea = ordenadas[int(raw)-1]
+    except (ValueError, IndexError):
+        print(f"  {ROJO}Número inválido.{R}")
+        input(f"  {GRIS}Enter...{R}")
+        return
+
+    dur_raw = leer_linea(f"  {GRIS}Duración en minutos [90]:{R} ").strip() or "90"
+    try:
+        duracion = max(5, int(dur_raw))
+    except ValueError:
+        duracion = 90
+
+    tarea["_estado_previo"] = tarea["estado"]
+    tarea["estado"]         = "en_foco"
+    tarea["foco_inicio"]    = datetime.now().isoformat()
+    tarea["foco_duracion"]  = duracion
+    guardar_tareas(tareas)
+    refrescar_waybar()
+
+    termina = (datetime.now() + timedelta(minutes=duracion)).strftime("%H:%M")
+    print(f"\n  {AMARILLO}⚡ Foco iniciado: {tarea['name']}{R}")
+    print(f"  {GRIS}{duracion} min  ·  termina ~{termina}{R}\n")
+    input(f"  {GRIS}Enter para continuar...{R}")
+
+
+def accion_cerrar_foco(tareas):
+    foco = foco_activo(tareas)
+    if not foco:
+        return
+
+    limpiar()
+    seccion("Cerrar Bloque de Foco", AMARILLO)
+    linea()
+
+    elapsed  = minutos_en_foco(foco)
+    planned  = foco.get("foco_duracion", 90)
+    pct      = min(100, int(elapsed / planned * 100))
+    barra    = barra_progreso(pct)
+
+    print(f"\n  {BLANCO}{BOLD}{nombre_corto(foco['name'],46)}{R}")
+    print(f"  {barra}  {elapsed}/{planned} min")
+
+    print(f"\n  ¿Cómo terminó este bloque?\n")
+    print(f"  {VERDE}[l]{R} Tarea lista       {CYAN}[s]{R} Sigue mañana (→ cola)   {AMARILLO}[m]{R} Necesita más bloques hoy\n")
+    print(f"  {GRIS}tecla → {R}", end="", flush=True)
+    ch = leer_tecla()
+    print(ch or "")
+
+    # Guardar en historial
+    hist = cargar_historial()
+    hist.append({
+        "tarea_id":      foco["id"],
+        "tarea_nombre":  foco["name"],
+        "fecha":         date.today().isoformat(),
+        "inicio":        foco.get("foco_inicio"),
+        "fin":           datetime.now().isoformat(),
+        "minutos_reales":elapsed,
+        "minutos_plan":  planned,
+        "resultado":     ch,
+    })
+    guardar_historial(hist)
+
+    # Limpiar campos de foco
+    for campo in ("foco_inicio", "foco_duracion", "_estado_previo"):
+        foco.pop(campo, None)
+
+    if ch == "l":
+        foco["estado"]     = "listo"
+        foco["completado"] = date.today().isoformat()
+        print(f"\n  {VERDE}✓ ¡Tarea completada!{R}")
+        mostrar_desbloqueadas(foco["id"], tareas)
+    elif ch == "s":
+        foco["estado"] = "cola"
+        foco.pop("fecha_activacion", None)
+        print(f"\n  {CYAN}→ Vuelve a la cola para mañana.{R}")
+    else:
+        foco["estado"] = "hoy" if plan_de_hoy() else "cola"
+        print(f"\n  {AMARILLO}→ Sigue activa para otro bloque hoy.{R}")
+
+    guardar_tareas(tareas)
+    refrescar_waybar()
+    input(f"\n  {GRIS}Enter para continuar...{R}")
+
+
+def accion_marcar_lista(tareas):
+    activas = [t for t in tareas if t["estado"] in ("hoy","cola","en_foco")]
+    if not activas:
+        return
+
+    limpiar()
+    seccion("Marcar como lista", VERDE)
+    linea()
+    print()
+    for i, t in enumerate(activas):
+        tipo = etiqueta_tipo(t.get("tipo","fondo"))
+        print(f"  {GRIS}{i+1}.{R}  {tipo}  {BLANCO}{nombre_corto(t['name'],44)}{R}  {GRIS}[{t['estado']}]{R}")
+
+    raw = leer_linea(f"\n  {GRIS}Número (o Enter para cancelar):{R} ").strip()
+    if not raw:
+        return
+    try:
+        tarea = activas[int(raw)-1]
+    except (ValueError, IndexError):
+        return
+
+    for campo in ("foco_inicio", "foco_duracion", "_estado_previo"):
+        tarea.pop(campo, None)
+    tarea["estado"]     = "listo"
+    tarea["completado"] = date.today().isoformat()
+    guardar_tareas(tareas)
+    refrescar_waybar()
+
+    print(f"\n  {VERDE}✓ '{nombre_corto(tarea['name'],40)}' lista 🎉{R}")
+    mostrar_desbloqueadas(tarea["id"], tareas)
+    input(f"\n  {GRIS}Enter para continuar...{R}")
+
+
+def accion_descartar(tareas):
+    activas = [t for t in tareas if t["estado"] in ("hoy","cola","bandeja","en_foco")]
+    if not activas:
+        return
+
+    limpiar()
+    seccion("Descartar tarea", GRIS)
+    linea()
+    print()
+    for i, t in enumerate(activas):
+        tipo = etiqueta_tipo(t.get("tipo","fondo")) if t["estado"] != "bandeja" else f"{GRIS}○{R}"
+        print(f"  {GRIS}{i+1}.{R}  {tipo}  {BLANCO}{nombre_corto(t['name'],44)}{R}  {GRIS}[{t['estado']}]{R}")
+
+    raw = leer_linea(f"\n  {GRIS}Número (o Enter para cancelar):{R} ").strip()
+    if not raw:
+        return
+    try:
+        tarea = activas[int(raw)-1]
+    except (ValueError, IndexError):
+        return
+
+    motivo = leer_linea(f"  {GRIS}Motivo (opcional):{R} ").strip() or "sin motivo"
+    for campo in ("foco_inicio", "foco_duracion", "_estado_previo"):
+        tarea.pop(campo, None)
+    tarea.update({
+        "estado":          "descartado",
+        "descartado":      date.today().isoformat(),
+        "motivo_descarte": motivo,
+    })
+    guardar_tareas(tareas)
+    print(f"\n  {GRIS}✗ Descartada conscientemente.{R}\n")
+    input(f"  {GRIS}Enter para continuar...{R}")
+
+
+def accion_cierre_dia(tareas):
+    activas = [t for t in tareas if t["estado"] in ("hoy","en_foco")]
+    if not activas:
+        print(f"\n  {VERDE}No hay tareas activas sin resolver 🎉{R}\n")
+    else:
+        limpiar()
+        seccion("Cierre de Día", MAGENTA)
+        linea()
+        print(f"\n  {AMARILLO}{len(activas)} tarea/s activas sin completar — decidí qué hacer:{R}\n")
+
+        for t in activas:
+            for campo in ("foco_inicio","foco_duracion","_estado_previo"):
+                t.pop(campo, None)
+            tipo = etiqueta_tipo(t.get("tipo","fondo"))
+            print(f"  {tipo}  {BLANCO}{BOLD}{nombre_corto(t['name'],44)}{R}")
+            print(f"  {CYAN}[c]{R} cola (mañana)   {VERDE}[l]{R} lista   {GRIS}[x]{R} descartar\n")
+            print(f"  {GRIS}tecla → {R}", end="", flush=True)
+            ch = leer_tecla()
+            print(ch or "")
+            if ch == "l":
+                t["estado"]     = "listo"
+                t["completado"] = date.today().isoformat()
+                print(f"  {VERDE}  → Lista{R}\n")
+            elif ch == "x":
+                motivo = leer_linea(f"  {GRIS}Motivo:{R} ").strip() or "sin motivo"
+                t["estado"]          = "descartado"
+                t["descartado"]      = date.today().isoformat()
+                t["motivo_descarte"] = motivo
+                print(f"  {GRIS}  → Descartada{R}\n")
+            else:
+                t["estado"] = "cola"
+                t.pop("fecha_activacion", None)
+                print(f"  {CYAN}  → Cola (aparece mañana){R}\n")
+
+        guardar_tareas(tareas)
+
+    # Archivar plan
+    plan = plan_de_hoy()
+    if plan:
+        plan["archivado"]    = True
+        plan["archivado_en"] = datetime.now().isoformat()
+        guardar_plan(plan)
+        print(f"  {GRIS}Plan de hoy archivado.{R}")
+
+    refrescar_waybar()
+    print(f"\n  {BOLD}Día cerrado. Mañana: armar nuevo plan con [p]{R}\n")
+    input(f"  {GRIS}Enter para continuar...{R}")
+
+
+def accion_historial():
+    limpiar()
+    seccion("Historial de Bloques de Foco", MAGENTA)
+    linea()
+
+    hist = cargar_historial()
+    if not hist:
+        print(f"\n  {GRIS}Sin bloques registrados.{R}\n")
+        input(f"  {GRIS}Enter para continuar...{R}")
+        return
+
+    by_fecha = {}
+    for b in hist:
+        by_fecha.setdefault(b.get("fecha","?"), []).append(b)
+
+    total_acum = sum(b.get("minutos_reales",0) for b in hist)
+    print(f"\n  {GRIS}Total acumulado: {MAGENTA}{total_acum//60}h {total_acum%60}m{R}  ({len(hist)} bloques)\n")
+
+    for fecha in sorted(by_fecha.keys(), reverse=True)[:10]:
+        bloques   = by_fecha[fecha]
+        total_dia = sum(b.get("minutos_reales",0) for b in bloques)
+        print(f"  {CYAN}{fecha}{R}  {GRIS}{total_dia} min — {len(bloques)} bloque/s{R}")
+        for b in bloques:
+            icono = {"l":"✓","s":"↩","m":"↻"}.get(b.get("resultado","?"),"?")
+            real  = b.get("minutos_reales",0)
+            plan_ = b.get("minutos_plan",90)
+            print(f"    {GRIS}{icono}{R} {BLANCO}{nombre_corto(b.get('tarea_nombre','?'),38)}{R}  {GRIS}{real}/{plan_} min{R}")
         print()
 
-    elif sub == "status":
-        focus = get_active_focus_block(tasks)
-        if not focus:
-            print(f"\n  {C['gray']}No hay bloque de foco activo.{C['reset']}\n")
-        else:
-            elapsed  = _focus_elapsed(focus)
-            planned  = focus.get("focus_duration", 90)
-            remaining = max(0, planned - elapsed)
-            pct = min(100, int(elapsed / planned * 100))
-            bar = "█" * (pct // 5) + "░" * (20 - pct // 5)
-            print(f"\n  {C['yellow']}⚡ EN FOCO: [{focus['id']}] {focus['name']}{C['reset']}")
-            print(f"  [{bar}] {pct}%  |  {elapsed}/{planned} min  |  {remaining} min restantes\n")
-
-    else:
-        print("  Uso: focus start <id> [min] | focus end <id> | focus status")
-
-    subprocess.run(["pkill", "-SIGRTMIN+8", "waybar"], check=False)
+    input(f"  {GRIS}Enter para continuar...{R}")
 
 
-def _show_unblocked(completed_id, tasks):
-    unblocked = [
-        t for t in tasks
-        if completed_id in t.get("depends_on", []) and t["status"] not in ("done", "dropped")
+def mostrar_desbloqueadas(tarea_id, tareas):
+    recien = [
+        t for t in tareas
+        if tarea_id in t.get("depende_de", [])
+        and t["estado"] not in ("listo","descartado")
     ]
-    if unblocked:
-        print(f"\n  {C['cyan']}Desbloqueadas:{C['reset']}")
-        for u in unblocked:
-            p = compute_priority(u, tasks)
+    if recien:
+        print(f"\n  {CYAN}Desbloqueadas:{R}")
+        for u in recien:
+            p = calcular_prioridad(u, tareas)
             print(f"    → [{u['id']}] {u['name']} (p={p:.3f})")
 
 
-def cmd_done(task_id):
-    tasks = load_tasks()
-    for t in tasks:
-        if t["id"] == task_id:
-            if t["status"] == "in_progress":
-                t.pop("focus_started", None)
-                t.pop("focus_duration", None)
-                t.pop("_prev_status", None)
-            t["status"] = "done"
-            t["completed"] = date.today().isoformat()
-            save_tasks(tasks)
-            print(f"\n  {C['green']}✓ [{task_id}] '{t['name']}' completada{C['reset']}")
-            _show_unblocked(task_id, tasks)
-            print()
-            return
-    print(f"  Tarea {task_id} no encontrada.")
+def refrescar_waybar():
+    """Manda señal a waybar para refrescar el módulo scheduler."""
+    try:
+        subprocess.run(["pkill", "-SIGRTMIN+8", "waybar"], check=False, capture_output=True)
+    except FileNotFoundError:
+        pass
 
-
-def cmd_drop(task_id):
-    tasks = load_tasks()
-    for t in tasks:
-        if t["id"] == task_id:
-            if t["status"] in ("done", "dropped"):
-                print(f"  Tarea ya está {t['status']}.")
-                return
-            reason = input(f"  Motivo para descartar [{t['name']}]: ").strip() or "sin motivo"
-            t["status"] = "dropped"
-            t["dropped"] = date.today().isoformat()
-            t["drop_reason"] = reason
-            save_tasks(tasks)
-            print(f"\n  {C['gray']}✗ [{task_id}] '{t['name']}' descartada conscientemente.{C['reset']}\n")
-            return
-    print(f"  Tarea {task_id} no encontrada.")
-
-
-def cmd_eod():
-    """Cierre de día: barre activas sin completar y fuerza una decisión."""
-    tasks  = load_tasks()
-    plan   = get_today_plan()
-    active = [t for t in tasks if t["status"] in ("active", "in_progress")]
-
-    print(f"\n{C['bold']}  Cierre de Día — {date.today().isoformat()}{C['reset']}")
-    print(f"{C['gray']}{'─' * 50}{C['reset']}")
-
-    if not active:
-        print(f"  {C['green']}No hay tareas activas sin resolver 🎉{C['reset']}")
-    else:
-        print(f"  {C['yellow']}{len(active)} tarea/s activas sin completar. Decidí qué hacer con cada una:{C['reset']}\n")
-        for t in active:
-            tipo_icon = TASK_TYPE_ICONS.get(t.get("task_type", "fondo"), "?")
-            print(f"  {tipo_icon} [{t['id']}] {t['name']}  {C['gray']}({t.get('category','?')}){C['reset']}")
-            while True:
-                action = input("  [b]acklog (mañana) / [d]one / [x]drop: ").strip().lower()
-                if action in ("b", "d", "x"):
-                    break
-                print("  Opción inválida.")
-
-            # Limpiar campos de foco si estaba in_progress
-            t.pop("focus_started", None)
-            t.pop("focus_duration", None)
-            t.pop("_prev_status", None)
-
-            if action == "d":
-                t["status"] = "done"
-                t["completed"] = date.today().isoformat()
-                print(f"  {C['green']}  → DONE{C['reset']}")
-            elif action == "x":
-                reason = input("  Motivo del descarte: ").strip() or "sin motivo"
-                t["status"] = "dropped"
-                t["dropped"] = date.today().isoformat()
-                t["drop_reason"] = reason
-                print(f"  {C['gray']}  → DROPPED{C['reset']}")
-            else:
-                t["status"] = "backlog"
-                t.pop("activated_date", None)
-                print(f"  {C['cyan']}  → BACKLOG (reaparece mañana){C['reset']}")
-            print()
-
-    save_tasks(tasks)
-
-    # Archivar plan del día
-    if plan:
-        plan["archived"] = True
-        plan["archived_at"] = datetime.now().isoformat()
-        save_plan(plan)
-        print(f"  {C['gray']}Plan de hoy archivado.{C['reset']}")
-
-    print(f"\n  {C['bold']}Día cerrado. Mañana corrés `plan` para el siguiente ciclo.{C['reset']}\n")
-
-
-def cmd_history():
-    history = load_focus_history()
-    if not history:
-        print(f"\n  {C['gray']}Sin bloques de foco registrados.{C['reset']}\n")
-        return
-
-    print(f"\n{C['bold']}  Historial de Bloques de Foco{C['reset']}")
-    print(f"{C['gray']}{'─' * 55}{C['reset']}")
-
-    by_date = {}
-    for b in history:
-        d = b.get("date", "?")
-        by_date.setdefault(d, []).append(b)
-
-    for d in sorted(by_date.keys(), reverse=True)[:7]:  # últimos 7 días
-        blocks = by_date[d]
-        total_min = sum(b.get("elapsed_min", 0) for b in blocks)
-        print(f"\n  {C['cyan']}{d}{C['reset']}  {C['gray']}({total_min} min totales){C['reset']}")
-        for b in blocks:
-            outcome_icon = {"d": "✓", "c": "↩", "a": "↻"}.get(b.get("outcome", "?"), "?")
-            print(f"    {outcome_icon} [{b['task_id']}] {b['task_name']}  {C['gray']}{b.get('elapsed_min',0)}/{b.get('planned_min',90)} min{C['reset']}")
-
-    total_all = sum(b.get("elapsed_min", 0) for b in history)
-    print(f"\n  {C['gray']}Total acumulado: {total_all} min ({total_all//60}h {total_all%60}m){C['reset']}\n")
-
-
-def cmd_delete(task_id):
-    tasks = load_tasks()
-    target = next((t for t in tasks if t["id"] == task_id), None)
-    if not target:
-        print(f"  Tarea {task_id} no encontrada.")
-        return
-    if target["status"] not in ("inbox", "backlog"):
-        print(f"  {C['red']}Solo se pueden eliminar tareas en INBOX o BACKLOG (estado: {target['status']}).{C['reset']}")
-        print(f"  Usá `drop {task_id}` para descartar conscientemente.")
-        return
-    tasks = [t for t in tasks if t["id"] != task_id]
-    save_tasks(tasks)
-    print(f"  {C['green']}✓ Tarea [{task_id}] eliminada{C['reset']}")
-
-
-# ── TUI ────────────────────────────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+#  TUI PRINCIPAL — LOOP
+# ══════════════════════════════════════════════════════════════════════════════
 def cmd_tui():
-    tasks = load_tasks()
-    plan  = get_today_plan()
+    while True:
+        limpiar()
+        tareas = cargar_tareas()
+        plan   = plan_de_hoy()
+        foco   = foco_activo(tareas)
+        bandeja_tareas = [t for t in tareas if t["estado"] == "bandeja"]
 
-    print(f"\n{C['bold']}{C['cyan']}  CPU SCHEDULER PERSONAL{C['reset']}")
-    print(f"{C['gray']}{'─' * 58}{C['reset']}")
+        # ── Header ──
+        hoy = date.today().strftime("%A %d %b").capitalize()
+        print(f"\n  {BOLD}{CYAN}SCHEDULER{R}  {GRIS}{hoy}{R}", end="")
+        mostrar_stats_rapidas(tareas)
+        linea()
 
-    # INBOX
-    inbox = [t for t in tasks if t["status"] == "inbox"]
-    if inbox:
-        print(f"\n{C['bold']}  INBOX ({len(inbox)}){C['reset']}  {C['gray']}← procesar con `process`{C['reset']}")
-        for t in inbox:
-            print(f"  {C['gray']}○ [{t['id']}] {t['name']}{C['reset']}")
+        # ── Secciones contextuales ──
+        if foco:
+            mostrar_foco(foco)
 
-    # FOCO ACTIVO
-    focus = get_active_focus_block(tasks)
-    if focus:
-        elapsed  = _focus_elapsed(focus)
-        planned  = focus.get("focus_duration", 90)
-        remaining = max(0, planned - elapsed)
-        pct = min(100, int(elapsed / planned * 100))
-        bar = "█" * (pct // 5) + "░" * (20 - pct // 5)
-        print(f"\n{C['bold']}  ⚡ EN FOCO AHORA:{C['reset']}")
-        print(f"  {C['yellow']}▶ [{focus['id']}] {focus['name']}{C['reset']}")
-        print(f"  [{bar}] {pct}%  {elapsed}/{planned} min  |  {remaining} min restantes")
+        if plan:
+            mostrar_plan(tareas)
 
-    # PLAN DE HOY
-    if plan:
-        locked_label = f"{C['red']}[CERRADO]{C['reset']}" if plan.get("locked") else f"{C['green']}[abierto]{C['reset']}"
-        print(f"\n{C['bold']}  PLAN HOY {locked_label}{C['reset']}")
-        all_ids = [plan["principal"]] + plan["secundarias"]
-        for i, tid in enumerate(all_ids):
-            t = next((x for x in tasks if x["id"] == tid), None)
-            if not t:
-                continue
-            slot  = "MAIN" if i == 0 else f"S{i}  "
-            tipo  = TASK_TYPE_ICONS.get(t.get("task_type", "fondo"), "?")
-            cat   = CATEGORY_ICONS.get(t.get("category", "personal"), "?")
-            days  = days_until(t.get("deadline"))
-            d_str = f"{int(days)}d" if t.get("deadline") else "∞"
-            status_color = {
-                "active": C["cyan"], "in_progress": C["yellow"],
-                "done": C["green"], "dropped": C["gray"],
-            }.get(t["status"], C["reset"])
-            print(f"  {C['gray']}{slot}{C['reset']}  {tipo}{cat} {status_color}[{t['id']}] {t['name']}{C['reset']}  {C['gray']}[{d_str}] {t['status']}{C['reset']}")
-    else:
-        print(f"\n  {C['yellow']}Sin plan de hoy. Usá `plan` para armar uno.{C['reset']}")
+        if bandeja_tareas:
+            mostrar_bandeja(tareas)
 
-    # BACKLOG
-    backlog = [t for t in tasks if t["status"] == "backlog"]
-    if backlog:
-        sorted_b = sorted(backlog, key=lambda t: compute_priority(t, tasks), reverse=True)
-        print(f"\n{C['bold']}  BACKLOG ({len(backlog)}){C['reset']}")
-        for t in sorted_b:
-            p    = compute_priority(t, tasks)
-            tipo = TASK_TYPE_ICONS.get(t.get("task_type", "fondo"), "?")
-            cat  = CATEGORY_ICONS.get(t.get("category", "personal"), "?")
-            days = days_until(t.get("deadline"))
-            d_str = f"{int(days)}d" if t.get("deadline") else "∞"
-            blocked = " 🔒" if is_blocked(t, tasks) else ""
+        cola_tareas = [t for t in tareas if t["estado"] == "cola"]
+        if cola_tareas:
+            mostrar_cola(tareas)
 
-            if days <= 0:
-                color = C["red"]
-            elif days <= 7:
-                color = C["yellow"]
-            else:
-                color = C["reset"]
+        mostrar_completadas_recientes(tareas)
 
-            print(f"  {color}{tipo}{cat} [{t['id']}] {t['name']}{C['reset']}  {C['gray']}[{d_str}] p={p:.3f}{blocked}{C['reset']}")
+        # ── Menú ──
+        opciones = construir_menu(tareas, foco, plan, bandeja_tareas)
+        mostrar_menu(opciones)
 
-    # DONE recientes
-    done = [t for t in tasks if t["status"] == "done"]
-    if done:
-        print(f"\n{C['gray']}  COMPLETADAS ({len(done)}) — últimas 3:")
-        for t in done[-3:]:
-            print(f"    ✓ [{t['id']}] {t['name']}  ({t.get('completed','?')})")
-        print(C["reset"])
+        tecla = leer_tecla()
+        if tecla is None:
+            continue
 
-    print()
-    input(f"  {C['gray']}Enter para cerrar...{C['reset']}")
+        accion_map = {a: aid for _, a, aid in [("","","")] }  # dummy
+        accion_map = {op[0]: op[2] for op in opciones}
 
+        accion = accion_map.get(tecla)
 
-# ── Waybar ─────────────────────────────────────────────────────────────────────
+        if accion == "salir" or tecla == "q":
+            limpiar()
+            break
+        elif accion == "nueva":
+            tareas = cargar_tareas()
+            accion_nueva(tareas)
+        elif accion == "procesar":
+            tareas = cargar_tareas()
+            accion_procesar(tareas)
+        elif accion == "armar_plan":
+            tareas = cargar_tareas()
+            accion_armar_plan(tareas)
+        elif accion == "cerrar_plan":
+            accion_cerrar_plan()
+        elif accion == "iniciar_foco":
+            tareas = cargar_tareas()
+            accion_iniciar_foco(tareas)
+        elif accion == "cerrar_foco":
+            tareas = cargar_tareas()
+            accion_cerrar_foco(tareas)
+        elif accion == "marcar_lista":
+            tareas = cargar_tareas()
+            accion_marcar_lista(tareas)
+        elif accion == "descartar":
+            tareas = cargar_tareas()
+            accion_descartar(tareas)
+        elif accion == "cierre_dia":
+            tareas = cargar_tareas()
+            accion_cierre_dia(tareas)
+        elif accion == "historial":
+            accion_historial()
+        # tecla inválida → solo redibuja
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  WAYBAR
+# ══════════════════════════════════════════════════════════════════════════════
 def cmd_waybar():
-    tasks = load_tasks()
+    tareas = cargar_tareas()
 
     # Prioridad 1: bloque de foco activo
-    focus = get_active_focus_block(tasks)
-    if focus:
-        elapsed   = _focus_elapsed(focus)
-        planned   = focus.get("focus_duration", 90)
+    foco = foco_activo(tareas)
+    if foco:
+        elapsed   = minutos_en_foco(foco)
+        planned   = foco.get("foco_duracion", 90)
         remaining = max(0, planned - elapsed)
-        icon      = CATEGORY_ICONS.get(focus.get("category", "personal"), "⚡")
-        name      = focus["name"][:20] + "..." if len(focus["name"]) > 20 else focus["name"]
         pct       = min(100, int(elapsed / planned * 100))
+        icono     = ICONOS_CAT.get(foco.get("categoria","personal"), "⚡")
+        nombre    = foco["name"][:20] + "…" if len(foco["name"]) > 20 else foco["name"]
         print(json.dumps({
-            "text":    f"⚡ {icon} {name} · {remaining}m",
-            "tooltip": f"EN FOCO: {focus['name']}\n{elapsed}/{planned} min  ({pct}% completado)",
-            "class":   "in_progress",
+            "text":    f"⚡ {icono} {nombre} · {remaining}m",
+            "tooltip": f"EN FOCO: {foco['name']}\n{elapsed}/{planned} min ({pct}%)",
+            "class":   "en_foco",
         }))
         return
 
-    # Prioridad 2: tarea principal del plan / top de backlog
-    current = get_top_task(tasks)
-    if not current:
+    # Prioridad 2: tarea principal
+    actual = tarea_principal(tareas)
+    if not actual:
+        bandeja_n = sum(1 for t in tareas if t["estado"] == "bandeja")
+        tooltip   = f"⚠ {bandeja_n} en bandeja sin procesar" if bandeja_n else "No hay tareas pendientes"
         print(json.dumps({
-            "text":    "󰄭 Sin tareas",
-            "tooltip": "No hay tareas pendientes",
-            "class":   "idle",
+            "text":    "󰄭 Sin tareas" if not bandeja_n else f"󰄭 Bandeja ({bandeja_n})",
+            "tooltip": tooltip,
+            "class":   "vacio" if not bandeja_n else "bandeja",
         }))
         return
 
-    days = days_until(current.get("deadline"))
-    icon = CATEGORY_ICONS.get(current.get("category", "personal"), "󰋙")
-    name = current["name"][:22] + "..." if len(current["name"]) > 22 else current["name"]
+    dias  = dias_hasta(actual.get("limite"))
+    icono = ICONOS_CAT.get(actual.get("categoria","personal"), "󰋙")
+    nombre = actual["name"][:22] + "…" if len(actual["name"]) > 22 else actual["name"]
 
-    if days <= 0:
-        urgency_class, d_str = "overdue", "¡VENCIDA!"
-    elif days <= 2:
-        urgency_class, d_str = "critical", f"en {int(days)}d"
-    elif days <= 7:
-        urgency_class, d_str = "warning",  f"en {int(days)}d"
-    elif current.get("deadline"):
-        urgency_class, d_str = "normal",   f"en {int(days)}d"
+    if dias <= 0:
+        clase, d_str = "vencida",  "¡VENCIDA!"
+    elif dias <= 2:
+        clase, d_str = "critica",  f"en {int(dias)}d"
+    elif dias <= 7:
+        clase, d_str = "alerta",   f"en {int(dias)}d"
+    elif actual.get("limite"):
+        clase, d_str = "normal",   f"en {int(dias)}d"
     else:
-        urgency_class, d_str = "normal",   "sin fecha"
+        clase, d_str = "normal",   "sin fecha"
 
-    plan = get_today_plan()
-    tooltip_lines = [f"<b>Plan de hoy — {date.today().isoformat()}</b>"] if plan else ["<b>Top Backlog:</b>"]
-    sorted_active = get_sorted_backlog(tasks)
-    for i, t in enumerate(sorted_active[:5]):
-        p = compute_priority(t, tasks)
-        blocked = " 🔒" if is_blocked(t, tasks) else ""
-        d = days_until(t.get("deadline"))
-        d_s = f"{int(d)}d" if t.get("deadline") else "∞"
-        marker = "▶ " if t["id"] == current["id"] else f"{i+1}. "
-        tipo = TASK_TYPE_ICONS.get(t.get("task_type", "fondo"), "")
-        tooltip_lines.append(f"{marker}{tipo} {t['name']} [{d_s}] (p={p:.2f}){blocked}")
+    # Tooltip
+    plan = plan_de_hoy()
+    header = f"<b>Plan de hoy — {date.today().isoformat()}</b>" if plan else "<b>Top Cola:</b>"
+    lineas = [header]
+    for i, t in enumerate(cola_ordenada(tareas)[:5]):
+        p     = calcular_prioridad(t, tareas)
+        d     = dias_hasta(t.get("limite"))
+        d_s   = f"{int(d)}d" if t.get("limite") else "∞"
+        bloq  = " 🔒" if esta_bloqueada(t, tareas) else ""
+        marca = "▶ " if t["id"] == actual["id"] else f"{i+1}. "
+        tipo  = ICONOS_TIPO.get(t.get("tipo","fondo"),"")
+        lineas.append(f"{marca}{tipo} {t['name']} [{d_s}] (p={p:.2f}){bloq}")
 
-    inbox_count = sum(1 for t in tasks if t["status"] == "inbox")
-    pending = sum(1 for t in tasks if t["status"] in ("backlog", "active", "in_progress"))
-    if inbox_count:
-        tooltip_lines.append(f"\n<i>⚠ {inbox_count} en INBOX sin procesar</i>")
-    tooltip_lines.append(f"<i>{pending} en cola</i>")
+    bandeja_n = sum(1 for t in tareas if t["estado"] == "bandeja")
+    pendientes = sum(1 for t in tareas if t["estado"] in ("cola","hoy","en_foco"))
+    if bandeja_n:
+        lineas.append(f"\n<i>⚠ {bandeja_n} en bandeja sin procesar</i>")
+    lineas.append(f"<i>{pendientes} en cola</i>")
 
     print(json.dumps({
-        "text":    f"{icon} {name} · {d_str}",
-        "tooltip": "\n".join(tooltip_lines),
-        "class":   urgency_class,
+        "text":    f"{icono} {nombre} · {d_str}",
+        "tooltip": "\n".join(lineas),
+        "class":   clase,
     }))
 
+# ══════════════════════════════════════════════════════════════════════════════
+#  MIGRACIÓN — tareas con estados viejos
+# ══════════════════════════════════════════════════════════════════════════════
+def cmd_migrar():
+    """Convierte tareas con estados del esquema anterior al nuevo."""
+    tareas = cargar_tareas()
+    mapa_estados = {
+        "pending":     "cola",
+        "active":      "hoy",
+        "in_progress": "en_foco",
+        "done":        "listo",
+        "dropped":     "descartado",
+        "inbox":       "bandeja",
+        "backlog":     "cola",
+    }
+    mapa_campos = {
+        "category":   "categoria",
+        "task_type":  "tipo",
+        "deadline":   "limite",
+        "depends_on": "depende_de",
+        "created":    "creado",
+        "completed":  "completado",
+        "notes":      "notas",
+    }
+    cambiadas = 0
+    for t in tareas:
+        # Estados
+        if t.get("estado") is None and t.get("status"):
+            t["estado"] = mapa_estados.get(t.pop("status"), "cola")
+            cambiadas += 1
+        elif t.get("status"):
+            t["estado"] = mapa_estados.get(t.pop("status"), t.get("estado","cola"))
 
-# ── Entrypoint ─────────────────────────────────────────────────────────────────
+        # Campos renombrados
+        for viejo, nuevo in mapa_campos.items():
+            if viejo in t and nuevo not in t:
+                t[nuevo] = t.pop(viejo)
+
+        # task_type viejo → tipo
+        if "task_type" in t:
+            t["tipo"] = t.pop("task_type")
+
+    guardar_tareas(tareas)
+    print(f"  Migración completa — {len(tareas)} tareas actualizadas.")
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  ENTRYPOINT
+# ══════════════════════════════════════════════════════════════════════════════
 def main():
     args = sys.argv[1:]
 
     if not args or args[0] == "waybar":
         cmd_waybar()
-    elif args[0] == "tui" or args[0] == "list":
+    elif args[0] in ("tui", "list"):
         cmd_tui()
-    elif args[0] == "add":
-        cmd_add()
-    elif args[0] == "process":
-        cmd_process()
-    elif args[0] == "plan":
-        sub = args[1] if len(args) > 1 else None
-        cmd_plan(sub)
-    elif args[0] == "focus" and len(args) > 1:
-        cmd_focus(args[1], args[2:])
-    elif args[0] == "done" and len(args) > 1:
-        cmd_done(int(args[1]))
-    elif args[0] == "drop" and len(args) > 1:
-        cmd_drop(int(args[1]))
-    elif args[0] == "eod":
-        cmd_eod()
-    elif args[0] == "history":
-        cmd_history()
-    elif args[0] == "delete" and len(args) > 1:
-        cmd_delete(int(args[1]))
+    elif args[0] == "migrar":
+        cmd_migrar()
     else:
         print(__doc__)
-
 
 if __name__ == "__main__":
     main()
