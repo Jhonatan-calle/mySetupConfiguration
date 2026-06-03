@@ -137,6 +137,15 @@ def foco_activo(tareas):
     return None
 
 def minutos_en_foco(tarea):
+    """
+    Retorna los minutos reales de trabajo acumulados en esta sesión de foco.
+    El daemon pomodoro los incrementa cada vez que completa un bloque de trabajo.
+    Fallback: tiempo de reloj desde foco_inicio si no hay acumulado aún.
+    """
+    acumulados = tarea.get("minutos_acumulados")
+    if acumulados is not None:
+        return acumulados
+    # Fallback para sesiones sin pomodoro activo
     inicio = tarea.get("foco_inicio")
     if not inicio:
         return 0
@@ -293,7 +302,13 @@ def mostrar_foco(foco):
     linea("─", AMARILLO)
     tipo_col = COLOR_TIPO.get(foco.get("tipo","fondo"), GRIS)
     print(f"  {tipo_col}{BOLD}{nombre_corto(foco['name'], 44)}{R}")
-    print(f"  {barra}  {AMARILLO}{elapsed}m{R} transcurridos  ·  {CYAN}{remaining}m{R} restantes")
+    acum = foco.get("minutos_acumulados", 0)
+    print(f"  {barra}  {AMARILLO}{elapsed}m{R} reales acumulados  ·  objetivo {CYAN}{remaining}m{R}")
+    if acum > 0:
+        horas = acum // 60
+        mins_r = acum % 60
+        acum_str = f"{horas}h {mins_r}m" if horas else f"{mins_r}m"
+        print(f"  {GRIS}⏱ {acum_str} de pomodoros completados en esta sesión{R}")
     linea("─", AMARILLO)
 
 def mostrar_plan(tareas):
@@ -701,10 +716,11 @@ def accion_iniciar_foco(tareas):
     except ValueError:
         duracion = 90
 
-    tarea["_estado_previo"] = tarea["estado"]
-    tarea["estado"]         = "en_foco"
-    tarea["foco_inicio"]    = datetime.now().isoformat()
-    tarea["foco_duracion"]  = duracion
+    tarea["_estado_previo"]      = tarea["estado"]
+    tarea["estado"]              = "en_foco"
+    tarea["foco_inicio"]         = datetime.now().isoformat()
+    tarea["foco_duracion"]       = duracion
+    tarea["minutos_acumulados"]  = tarea.get("minutos_acumulados", 0)  # preserva acumulado previo
     guardar_tareas(tareas)
     refrescar_waybar()
 
@@ -751,7 +767,7 @@ def accion_cerrar_foco(tareas):
     })
     guardar_historial(hist)
 
-    # Limpiar campos de foco
+    # Limpiar campos de foco pero preservar minutos_acumulados en la tarea
     for campo in ("foco_inicio", "foco_duracion", "_estado_previo"):
         foco.pop(campo, None)
 
