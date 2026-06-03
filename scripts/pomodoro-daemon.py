@@ -5,15 +5,18 @@ Ejecutado por Hyprland al inicio (exec-once).
 
 Funciones:
   - Avanza el timer pomodoro segundo a segundo
-  - Al completar un bloque de trabajo, suma los minutos a la tarea en_foco
+  - Acredita minutos a la tarea en_foco en tiempo real (no solo al completar)
+  - Al pausar: acredita los minutos transcurridos desde la última acreditación
+  - Al completar un bloque work: acredita el resto y notifica
   - Notifica al completar cada bloque
-  - Auto-avanza work → break → work
 
-Estado compartido con waybar: /tmp/waybar-pomodoro
-  formato: status|elapsed|mode
-    status:  running | paused | stopped
-    elapsed: unix timestamp si running, segundos transcurridos si paused, 0 si stopped
-    mode:    work | break | long_break
+Estado compartido: /tmp/waybar-pomodoro
+  status|elapsed|mode|pomo_count|acreditado
+    status:      running | paused | stopped
+    elapsed:     unix timestamp si running, segundos transcurridos si paused/stopped
+    mode:        work | break | long_break
+    pomo_count:  pomodoros de trabajo completados
+    acreditado:  segundos ya sumados a la tarea en el ciclo actual (reset en cada nuevo bloque)
 """
 
 import json
@@ -22,52 +25,52 @@ import signal
 import subprocess
 import sys
 import time
-from datetime import date
 from pathlib import Path
 
-# ── Configuración ──────────────────────────────────────────────────────────────
-WORK_MINS = 30
-BREAK_MINS = 5
-LONG_BREAK_MINS = 15
-POMODOROS_ANTES_LARGO = 4  # cada cuántos work → long_break
+WORK_MINS             = 30
+BREAK_MINS            = 5
+LONG_BREAK_MINS       = 15
+POMODOROS_ANTES_LARGO = 4
+ACREDITAR_CADA_SEG    = 60   # acreditar en la tarea cada 60s mientras corre
 
 STATE_FILE = Path("/tmp/waybar-pomodoro")
-PIDFILE = Path("/tmp/waybar-pomodoro-daemon.pid")
+PIDFILE    = Path("/tmp/waybar-pomodoro-daemon.pid")
 TASKS_FILE = Path.home() / "OneDrive" / "varios" / "scheduler" / "tasks.json"
 
 
-# ── Persistencia mínima ────────────────────────────────────────────────────────
+# ── Estado ─────────────────────────────────────────────────────────────────────
 def leer_estado():
     try:
         partes = STATE_FILE.read_text().strip().split("|")
-        if len(partes) != 4:
-            raise ValueError
-        status, elapsed, mode, pomo_count = partes
-        return status, float(elapsed), mode, int(pomo_count)
+        # Migrar formatos viejos
+        if len(partes) == 3:
+            status, elapsed, mode = partes
+            return status, float(elapsed), mode, 0, 0
+        if len(partes) == 4:
+            status, elapsed, mode, pomo_count = partes
+            return status, float(elapsed), mode, int(pomo_count), 0
+        status, elapsed, mode, pomo_count, acreditado = partes
+        return status, float(elapsed), mode, int(pomo_count), int(acreditado)
     except Exception:
-        return "stopped", 0.0, "work", 0
+        return "stopped", 0.0, "work", 0, 0
+
+def escribir_estado(status, elapsed, mode, pomo_count, acreditado=0):
+    STATE_FILE.write_text(f"{status}|{elapsed}|{mode}|{pomo_count}|{acreditado}")
 
 
-def escribir_estado(status, elapsed, mode, pomo_count):
-    STATE_FILE.write_text(f"{status}|{elapsed}|{mode}|{pomo_count}")
-
-
+# ── Tareas ─────────────────────────────────────────────────────────────────────
 def leer_tareas():
     try:
         content = TASKS_FILE.read_text().strip()
-        if not content:
-            return []
-        return json.loads(content)
+        return json.loads(content) if content else []
     except Exception:
         return []
-
 
 def guardar_tareas(tareas):
     try:
         TASKS_FILE.write_text(json.dumps(tareas, indent=2, ensure_ascii=False))
     except Exception:
         pass
-
 
 def tarea_en_foco(tareas):
     for t in tareas:
@@ -76,88 +79,97 @@ def tarea_en_foco(tareas):
     return None
 
 
+# ── Acreditación ───────────────────────────────────────────────────────────────
+def acreditar_minutos(segundos):
+    """
+    Suma `segundos` a minutos_acumulados de la tarea en_foco.
+    Solo actúa si hay tarea en foco y segundos > 0.
+    Retorna los segundos efectivamente acreditados.
+    """
+    if segundos <= 0:
+        return 0
+    tareas = leer_tareas()
+    foco   = tarea_en_foco(tareas)
+    if foco is None:
+        return 0
+    mins = segundos / 60
+    foco["minutos_acumulados"] = round(
+        foco.get("minutos_acumulados", 0) + mins, 2
+    )
+    guardar_tareas(tareas)
+    return segundos
+
+
 # ── Notificaciones ─────────────────────────────────────────────────────────────
 def notificar(titulo, cuerpo, urgencia="normal"):
     try:
         subprocess.run(
             ["notify-send", "-u", urgencia, titulo, cuerpo],
-            check=False,
-            capture_output=True,
+            check=False, capture_output=True,
         )
     except FileNotFoundError:
         pass
-
 
 def refrescar_waybar():
     try:
-        subprocess.run(
-            ["pkill", "-SIGRTMIN+8", "waybar"], check=False, capture_output=True
-        )
+        subprocess.run(["pkill", "-SIGRTMIN+8", "waybar"], check=False, capture_output=True)
     except FileNotFoundError:
         pass
 
 
-# ── Lógica al completar un bloque ─────────────────────────────────────────────
-def completar_bloque(mode, pomo_count):
+# ── Completar bloque ───────────────────────────────────────────────────────────
+def completar_bloque(mode, pomo_count, spent_seg, acreditado_seg):
     """
     Llamado cuando el timer llega a 0.
-    - Si era work: acumula minutos en la tarea en_foco, avanza a break
-    - Si era break/long_break: avanza a work
-    Retorna el nuevo (mode, pomo_count).
+    Acredita los segundos finales aún no acreditados, luego avanza de modo.
     """
     if mode == "work":
-        # Acumular minutos en la tarea en_foco
+        # Acreditar lo que faltaba
+        pendiente = spent_seg - acreditado_seg
+        acreditar_minutos(pendiente)
+
         tareas = leer_tareas()
-        foco = tarea_en_foco(tareas)
-        if foco is not None:
-            foco["minutos_acumulados"] = foco.get("minutos_acumulados", 0) + WORK_MINS
-            guardar_tareas(tareas)
+        foco   = tarea_en_foco(tareas)
+        if foco:
             nombre = foco["name"][:35]
-            notificar(
-                "󰔛 Pomodoro completado",
-                f"{nombre}\n+{WORK_MINS} min acumulados",
-                "normal",
-            )
+            acum   = round(foco.get("minutos_acumulados", 0))
+            notificar("󰔛 Pomodoro completado", f"{nombre}\n{acum} min acumulados", "normal")
         else:
             notificar("󰔛 Pomodoro completado", "¡A descansar!", "normal")
 
         pomo_count += 1
         if pomo_count % POMODOROS_ANTES_LARGO == 0:
             nuevo_mode = "long_break"
-            notificar(
-                "󰒲 Descanso largo", f"{LONG_BREAK_MINS} min — te lo ganaste", "low"
-            )
+            notificar("󰒲 Descanso largo", f"{LONG_BREAK_MINS} min — te lo ganaste", "low")
         else:
             nuevo_mode = "break"
             notificar("󰅶 Descanso corto", f"{BREAK_MINS} min", "low")
-
     else:
-        # Fin de break → volver a trabajo
         nuevo_mode = "work"
         notificar("󰔛 ¡A trabajar!", f"Pomodoro #{pomo_count + 1}", "normal")
 
     return nuevo_mode, pomo_count
 
 
-# ── Loop principal ─────────────────────────────────────────────────────────────
+# ── Duración ───────────────────────────────────────────────────────────────────
 def duracion_seg(mode):
     return {
-        "work": WORK_MINS * 60,
-        "break": BREAK_MINS * 60,
+        "work":       WORK_MINS * 60,
+        "break":      BREAK_MINS * 60,
         "long_break": LONG_BREAK_MINS * 60,
     }.get(mode, WORK_MINS * 60)
 
 
+# ── Loop principal ─────────────────────────────────────────────────────────────
 def main():
-    # Evitar instancias duplicadas
     if PIDFILE.exists():
         try:
             pid = int(PIDFILE.read_text().strip())
-            os.kill(pid, 0)  # lanza OSError si no existe
+            os.kill(pid, 0)
             print(f"Daemon ya corriendo (PID {pid})")
             sys.exit(1)
         except (OSError, ValueError):
-            pass  # proceso muerto, continuar
+            pass
     PIDFILE.write_text(str(os.getpid()))
 
     def cleanup(sig=None, frame=None):
@@ -165,38 +177,61 @@ def main():
         sys.exit(0)
 
     signal.signal(signal.SIGTERM, cleanup)
-    signal.signal(signal.SIGINT, cleanup)
+    signal.signal(signal.SIGINT,  cleanup)
 
-    # Inicializar estado si no existe o es formato viejo (3 campos)
     try:
         partes = STATE_FILE.read_text().strip().split("|")
-        if len(partes) < 4:
-            escribir_estado("stopped", 0, "work", 0)
+        if len(partes) < 5:
+            escribir_estado("stopped", 0, "work", 0, 0)
     except Exception:
-        escribir_estado("stopped", 0, "work", 0)
+        escribir_estado("stopped", 0, "work", 0, 0)
 
-    ultimo_refresh = 0
+    status_anterior  = None
+    ultimo_refresh   = 0
 
     try:
         while True:
-            status, elapsed, mode, pomo_count = leer_estado()
+            status, elapsed, mode, pomo_count, acreditado = leer_estado()
+            now = time.time()
 
             if status == "running":
-                now = time.time()
-                total = duracion_seg(mode)
-                spent = now - elapsed  # elapsed es unix timestamp cuando running
+                total   = duracion_seg(mode)
+                spent   = now - elapsed   # elapsed es unix timestamp
 
                 if spent >= total:
-                    nuevo_mode, pomo_count = completar_bloque(mode, pomo_count)
-                    # Auto-arrancar el siguiente modo
-                    escribir_estado("stopped", 0, nuevo_mode, pomo_count)
+                    # Bloque completado
+                    nuevo_mode, pomo_count = completar_bloque(
+                        mode, pomo_count, int(total), acreditado
+                    )
+                    escribir_estado("stopped", 0, nuevo_mode, pomo_count, 0)
                     refrescar_waybar()
-                else:
-                    # Refrescar waybar cada 30s para actualizar countdown
+
+                elif mode == "work":
+                    # Acreditar en intervalos mientras corre
+                    pendiente = int(spent) - acreditado
+                    if pendiente >= ACREDITAR_CADA_SEG:
+                        acreditados = acreditar_minutos(pendiente)
+                        if acreditados:
+                            acreditado += acreditados
+                            escribir_estado(status, elapsed, mode, pomo_count, acreditado)
+
+                    # Refrescar waybar cada 30s
                     if now - ultimo_refresh >= 30:
                         refrescar_waybar()
                         ultimo_refresh = now
 
+            elif status == "paused" and status_anterior == "running":
+                # Acaba de pausar — acreditar lo transcurrido no acreditado aún
+                if mode == "work":
+                    # elapsed ahora contiene segundos transcurridos (lo setea pomodoro.py)
+                    pendiente = int(elapsed) - acreditado
+                    acreditados = acreditar_minutos(pendiente)
+                    if acreditados:
+                        nuevo_acreditado = acreditado + acreditados
+                        escribir_estado(status, elapsed, mode, pomo_count, nuevo_acreditado)
+                        refrescar_waybar()
+
+            status_anterior = status
             time.sleep(1)
 
     finally:

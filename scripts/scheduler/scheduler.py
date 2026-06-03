@@ -1045,9 +1045,9 @@ def cmd_waybar():
     # Prioridad 1: bloque de foco activo
     foco = foco_activo(tareas)
     if foco:
-        elapsed   = minutos_en_foco(foco)
+        elapsed   = int(minutos_en_foco(foco))
         planned   = foco.get("foco_duracion", 90)
-        remaining = max(0, planned - elapsed)
+        remaining = max(0, int(planned - elapsed))
         pct       = min(100, int(elapsed / planned * 100))
         icono     = ICONOS_CAT.get(foco.get("categoria","personal"), "⚡")
         nombre    = foco["name"][:20] + "…" if len(foco["name"]) > 20 else foco["name"]
