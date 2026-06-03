@@ -22,10 +22,10 @@ DATA_FILE.parent.mkdir(parents=True, exist_ok=True)
 
 # Peso base por categoría (multiplica la prioridad calculada)
 CATEGORY_WEIGHTS = {
-    "universidad": 1.5,
-    "software": 1.0,
-    "personal": 0.7,
-    "trabajo": 1.2,
+    "universidad": 1,
+    "software": 4,
+    "learning": 3,
+    "personal": 2
 }
 
 # Íconos por categoría para waybar
@@ -99,6 +99,19 @@ def compute_priority(task, tasks):
     days = days_until(task.get("deadline"))
     urgency_base = task.get("urgency", 5)  # 1-10, definida por el usuario
     cat_weight = CATEGORY_WEIGHTS.get(task.get("category", "personal"), 1.0)
+
+    if task.get("category") == "universidad" and days > 7:
+    # Excepción 1: urgencia explícitamente alta (>7)
+        if urgency_base <= 6:
+            # Excepción 2: no hay ninguna otra tarea pendiente
+            otras_pendientes = [
+                t for t in tasks
+                if t["id"] != task["id"]
+                and t["status"] != "done"
+                and t.get("category") != "universidad"
+            ]
+            if otras_pendientes:
+                return 0
 
     # Penalizar tareas muy lejanas (>30 días) para que no acaparen atención
     if days > 30:
