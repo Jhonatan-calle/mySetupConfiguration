@@ -1,0 +1,14 @@
+# Reglas globales para archivos en C
+If:
+  PathMatch: .*\.c
+
+CompileFlags:
+  Add: [-std=c23]
+
+---
+# Reglas globales para archivos en C++ (opcional, ajusta a tu versión)
+If:
+  PathMatch: .*\.(cpp|cc|cxx|hpp)
+
+CompileFlags:
+  Add: [-std=c++20]
