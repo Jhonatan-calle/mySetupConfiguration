@@ -20,3 +20,4 @@ vim.opt.spell = false
 vim.cmd([[autocmd BufEnter * setlocal nospell]])
 
 vim.opt.signcolumn = "no"
+vim.opt.mouse = ""
