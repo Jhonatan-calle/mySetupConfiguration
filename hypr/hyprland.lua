@@ -236,14 +236,12 @@ hl.bind("XF86AudioPause", hl.dsp.exec_cmd("playerctl play-pause"), { locked = tr
 ---- WINDOWS AND WORKSPACES ----
 --------------------------------
 hl.window_rule({
-    name  = "zen-file-upload",
-    match = { class = "app.zen_browser.zen", title = "File Upload" },
-    float = true,
-    center = true,
-})
-
-hl.window_rule({
-    name  = "zen-save-dialog",
-    match = { class = "app.zen_browser.zen", title = "file to save" },
-    move  = "68 0",
+    name     = "zen-dialogs-fix",
+    match    = {
+        class = "app.zen_browser.zen",
+        title = "^File Upload.*|^file to save.*|^Save As.*|^Guardar como.*",
+    },
+    float    = true,
+    center   = true,
+    size     = "1000 600",
 })
