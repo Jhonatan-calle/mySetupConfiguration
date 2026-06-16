@@ -110,6 +110,15 @@ def notificar(titulo, cuerpo, urgencia="normal"):
     except FileNotFoundError:
         pass
 
+def sonido(evento):
+    try:
+        subprocess.run(
+            ["canberra-gtk-play", "-i", evento],
+            check=False, capture_output=True, timeout=2,
+        )
+    except Exception:
+        pass
+
 def refrescar_waybar():
     try:
         subprocess.run(["pkill", "-SIGRTMIN+8", "waybar"], check=False, capture_output=True)
@@ -123,6 +132,7 @@ def completar_bloque(mode, pomo_count, spent_seg, acreditado_seg):
     Llamado cuando el timer llega a 0.
     Acredita los segundos finales aún no acreditados, luego avanza de modo.
     """
+    sonido("complete")
     if mode == "work":
         # Acreditar lo que faltaba
         pendiente = spent_seg - acreditado_seg
