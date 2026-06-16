@@ -180,17 +180,17 @@ hl.bind(mainMod .. " + B", hl.dsp.exec_cmd("~/.config/waybar/toggle.sh"))
 hl.bind(mainMod .. " + H", hl.dsp.focus({ workspace = "e-1" }))
 hl.bind(mainMod .. " + L", hl.dsp.focus({ workspace = "e+1" }))
 
--- Move focus with mainMod + ALT + H/J/K/L
-hl.bind(mainMod .. " + ALT + H", hl.dsp.focus({ direction = "left" }))
-hl.bind(mainMod .. " + ALT + L", hl.dsp.focus({ direction = "right" }))
-hl.bind(mainMod .. " + ALT + K", hl.dsp.focus({ direction = "up" }))
-hl.bind(mainMod .. " + ALT + J", hl.dsp.focus({ direction = "down" }))
+-- Move focus with mainMod + CTRL + H/J/K/L
+hl.bind(mainMod .. " + CTRL + H", hl.dsp.focus({ direction = "left" }))
+hl.bind(mainMod .. " + CTRL + L", hl.dsp.focus({ direction = "right" }))
+hl.bind(mainMod .. " + CTRL + K", hl.dsp.focus({ direction = "up" }))
+hl.bind(mainMod .. " + CTRL + J", hl.dsp.focus({ direction = "down" }))
 
--- Resize windows with SUPER + CTRL + H/J/K/L
-hl.bind(mainMod .. " + CTRL + H", hl.dsp.window.resize({ x = -20, y = 0 }))
-hl.bind(mainMod .. " + CTRL + L", hl.dsp.window.resize({ x = 20, y = 0 }))
-hl.bind(mainMod .. " + CTRL + K", hl.dsp.window.resize({ x = 0, y = -20 }))
-hl.bind(mainMod .. " + CTRL + J", hl.dsp.window.resize({ x = 0, y = 20 }))
+-- Resize windows with SUPER + ALT + H/J/K/L
+hl.bind(mainMod .. " + ALT + H", hl.dsp.window.resize({ x = -20, y = 0, relative = true }))
+hl.bind(mainMod .. " + ALT + L", hl.dsp.window.resize({ x = 20, y = 0, relative = true }))
+hl.bind(mainMod .. " + ALT + K", hl.dsp.window.resize({ x = 0, y = -20, relative = true }))
+hl.bind(mainMod .. " + ALT + J", hl.dsp.window.resize({ x = 0, y = 20, relative = true }))
 
 -- Switch workspaces with mainMod + [0-9]
 -- Move active window to a workspace with mainMod + SHIFT + [0-9]
