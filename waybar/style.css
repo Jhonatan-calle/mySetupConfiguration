@@ -1,80 +1,89 @@
 window#waybar {
-    background: transparent;
-    color: #e6e6e6;
-    border-bottom: 2px solid #b3b3b3;
+    background: rgba(30, 30, 30, 0.92);
+    color: #d4d4d4;
+    border-bottom: 1px solid #3c3c3c;
     font-family: "JetBrainsMono Nerd Font";
     font-size: 14px;
 }
 
 #workspaces button {
     padding: 0 6px;
-    color: #e6e6e6;
+    color: #d4d4d4;
+    border-radius: 6px;
+    margin: 4px 2px;
 }
 
 #workspaces button.active {
-    color: #4fd1ff;
-    border-bottom: 3px solid #4fd1ff;
+    color: #007acc;
+    background: rgba(255, 255, 255, 0.04);
+    border-bottom: 2px solid #007acc;
+}
+
+#workspaces button:hover {
+    background: rgba(255, 255, 255, 0.06);
 }
 
 #network, #battery, #clock, #memory, #cpu, #bluetooth {
     padding: 0 10px;
     margin: 4px;
     border-radius: 6px;
-    background-color: #000000;
-    border: 1px solid #b3b3b3;
+    background-color: rgba(37, 37, 38, 0.96);
+    border: 1px solid #3c3c3c;
+    color: #d4d4d4;
 }
 
 #bluetooth {
-    color: #b3b3b3;
+    color: #d4d4d4;
 }
 #bluetooth.on,
 #bluetooth.disconnected {
-    color: #e6e6e6;
+    color: #d4d4d4;
 }
 #bluetooth.connected {
-    color: #4fd1ff;
-    border-color: #4fd1ff;
+    color: #007acc;
+    border-color: #007acc;
 }
 
 #battery.critical {
-    color: #ff0000; /* Rojo alto contraste */
+    color: #f44747;
 }
 
 #battery.warning {
-    color: #ffaa00;
+    color: #d7ba7d;
 }
 
 #battery.charging {
-    color: #00ff00; /* Verde alto contraste */
+    color: #4ec9b0;
 }
 
 #custom-pomodoro {
     padding: 0 10px;
     margin: 4px;
     border-radius: 6px;
-    background-color: #000000;
-    border: 1px solid #b3b3b3;
+    background-color: rgba(37, 37, 38, 0.96);
+    border: 1px solid #3c3c3c;
+    color: #d4d4d4;
 }
 
 /* Cuando está corriendo - borde verde */
 #custom-pomodoro.running {
-    border-color: #00ff00;
-    color: #00ff00;
+    border-color: #4ec9b0;
+    color: #4ec9b0;
 }
 
 /* Cuando está en break - borde celeste */
 #custom-pomodoro.break {
-    border-color: #4fd1ff;
-    color: #4fd1ff;
+    border-color: #007acc;
+    color: #007acc;
 }
 
 #custom-gastos {
     padding: 0 10px;
     margin: 4px;
     border-radius: 6px;
-    background-color: #000000;
-    border: 1px solid #b3b3b3;
-    color: #e6e6e6;
+    background-color: rgba(37, 37, 38, 0.96);
+    border: 1px solid #3c3c3c;
+    color: #d4d4d4;
 }
 
 
@@ -83,37 +92,37 @@ window#waybar {
     padding: 0 10px;
     margin: 4px;
     border-radius: 6px;
-    background-color: #000000;
-    border: 1px solid #b3b3b3;
-    color: #e6e6e6;
+    background-color: rgba(37, 37, 38, 0.96);
+    border: 1px solid #3c3c3c;
+    color: #d4d4d4;
 }
 
 /* Sin tareas */
 #custom-scheduler.idle {
-    color: #b3b3b3;
+    color: #808080;
 }
 
 /* Tarea normal — sin urgencia */
 #custom-scheduler.normal {
-    color: #e6e6e6;
+    color: #d4d4d4;
 }
 
 /* Deadline en ≤7 días */
 #custom-scheduler.warning {
-    color: #ffaa00;
-    border-color: #ffaa00;
+    color: #d7ba7d;
+    border-color: #d7ba7d;
 }
 
 /* Deadline en ≤2 días */
 #custom-scheduler.critical {
-    color: #ff0000;
-    border-color: #ff0000;
+    color: #f44747;
+    border-color: #f44747;
 }
 
 /* Vencida */
 #custom-scheduler.overdue {
-    color: #ff0000;
-    border-color: #ff0000;
+    color: #f44747;
+    border-color: #f44747;
     animation: pulse 1s infinite;
 }
 

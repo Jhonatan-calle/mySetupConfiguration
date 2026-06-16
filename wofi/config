@@ -1,1 +1,5 @@
 insensitive=true
+gtk-dark=true
+allow_images=true
+show_all=true
+prompt=Search
