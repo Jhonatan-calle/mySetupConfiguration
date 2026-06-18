@@ -95,12 +95,11 @@ def foco_activo(tareas):
     return next((t for t in tareas if t.get("estado") == "en_foco"), None)
 
 def minutos_en_foco(tarea):
-    inicio = tarea.get("foco_inicio")
-    if inicio:
-        delta = datetime.now() - datetime.fromisoformat(inicio)
-        return int(delta.total_seconds() / 60)
-    acum = tarea.get("minutos_acumulados", 0)
-    return int(acum)
+    base = tarea.get("minutos_acum_base")
+    if base is not None:
+        actual = tarea.get("minutos_acumulados", 0)
+        return max(0, int(actual - base))
+    return int(tarea.get("minutos_acumulados", 0))
 
 
 def dias_hasta(deadline_str):
@@ -333,50 +332,37 @@ def accion_nueva(tareas):
     limpiar()
     seccion("Nueva tarea", AZUL)
     linea()
-    print(f"  {GRIS}Nombre | tipo(c/i/f) | categoria | AAAA-MM-DD{R}")
-    print(f"  {GRIS}Solo el nombre es obligatorio. Ej: estudiar | c | universidad | 2026-07-01{R}\n")
 
-    raw = leer_linea(f"  {BLANCO}→{R} ").strip()
-    if not raw:
-        return
-
-    partes = [p.strip() for p in raw.split("|")]
-    nombre = partes[0]
+    nombre = leer_linea(f"\n  {BLANCO}Nombre:{R} ").strip()
     if not nombre:
         print(f"  {ROJO}Nombre requerido.{R}")
         input(f"  {GRIS}Enter...{R}")
         return
 
-    tipo = "intensiva"
-    if len(partes) > 1 and partes[1]:
-        tipo = {"c": "critica", "i": "intensiva", "f": "fondo"}.get(partes[1].lower(), partes[1])
-        if tipo not in TIPOS:
-            tipo = "intensiva"
+    tipos_lista = list(TIPOS.keys())
+    print(f"\n  {GRIS}Tipo:{R}")
+    for i, t in enumerate(tipos_lista, 1):
+        col = COLOR_TIPO.get(t, GRIS)
+        print(f"  {GRIS}{i}.{R} {col}{t}{R}")
+    raw = leer_linea(f"  {GRIS}número [2]:{R} ").strip()
+    tipo = tipos_lista[int(raw)-1] if raw and raw.isdigit() and 1 <= int(raw) <= len(tipos_lista) else "intensiva"
 
-    categoria = "personal"
-    if len(partes) > 2 and partes[2]:
-        cats = list(CATEGORIAS.keys())
-        try:
-            idx = int(partes[2]) - 1
-            if 0 <= idx < len(cats):
-                categoria = cats[idx]
-            else:
-                categoria = partes[2].lower()
-                if categoria not in CATEGORIAS:
-                    categoria = "personal"
-        except ValueError:
-            categoria = partes[2].lower()
-            if categoria not in CATEGORIAS:
-                categoria = "personal"
+    cats = list(CATEGORIAS.keys())
+    print(f"\n  {GRIS}Categoría:{R}")
+    for i, c in enumerate(cats, 1):
+        icon = ICONOS_CAT.get(c, "")
+        print(f"  {GRIS}{i}.{R} {icon} {c}{R}")
+    raw = leer_linea(f"  {GRIS}número [4]:{R} ").strip()
+    categoria = cats[int(raw)-1] if raw and raw.isdigit() and 1 <= int(raw) <= len(cats) else "personal"
 
-    limite_str = partes[3].strip() if len(partes) > 3 else ""
+    raw = leer_linea(f"\n  {GRIS}Fecha límite (AAAA-MM-DD, Enter = sin fecha):{R} ").strip()
     limite = None
-    if limite_str:
+    if raw:
         try:
-            date.fromisoformat(limite_str)
-            limite = limite_str
+            date.fromisoformat(raw)
+            limite = raw
         except ValueError:
-            pass
+            print(f"  {AMARILLO}Fecha inválida, se ignora.{R}")
 
     tarea = {
         "id":        proximo_id(tareas),
@@ -395,7 +381,6 @@ def accion_nueva(tareas):
     p = calcular_prioridad(tarea, tareas)
     print(f"\n  {VERDE}✓ [{tarea['id']}] '{nombre}'{R}  {GRIS}{tipo}/{categoria}  p={p:.2f}{R}")
 
-    # Dependencias
     activas = [t for t in tareas if t["estado"] in ("pendiente", "hoy") and t["id"] != tarea["id"]]
     if activas:
         print(f"\n  {GRIS}¿Depende de alguna tarea?{R}")
@@ -509,6 +494,7 @@ def accion_iniciar_foco(tareas):
     tarea["foco_inicio"]        = datetime.now().isoformat()
     tarea["foco_duracion"]      = duracion
     tarea["minutos_acumulados"] = tarea.get("minutos_acumulados", 0)
+    tarea["minutos_acum_base"]  = tarea.get("minutos_acumulados", 0)
     guardar_tareas(tareas)
     refrescar_waybar()
 
@@ -530,6 +516,7 @@ def accion_foco_directo(tareas):
     tarea["foco_inicio"]        = datetime.now().isoformat()
     tarea["foco_duracion"]      = 90
     tarea["minutos_acumulados"] = tarea.get("minutos_acumulados", 0)
+    tarea["minutos_acum_base"]  = tarea.get("minutos_acumulados", 0)
     guardar_tareas(tareas)
     refrescar_waybar()
 
@@ -574,9 +561,7 @@ def accion_cerrar_foco(tareas):
     })
     guardar_historial(hist)
 
-    foco["minutos_acumulados"] = foco.get("minutos_acumulados", 0) + elapsed
-
-    for campo in ("foco_inicio", "foco_duracion", "_estado_previo"):
+    for campo in ("foco_inicio", "foco_duracion", "_estado_previo", "minutos_acum_base"):
         foco.pop(campo, None)
 
     if ch == "l":
@@ -618,7 +603,7 @@ def accion_marcar_lista(tareas):
     except (ValueError, IndexError):
         return
 
-    for campo in ("foco_inicio", "foco_duracion", "_estado_previo"):
+    for campo in ("foco_inicio", "foco_duracion", "_estado_previo", "minutos_acum_base"):
         tarea.pop(campo, None)
     tarea["estado"]     = "listo"
     tarea["completado"] = date.today().isoformat()
@@ -641,7 +626,7 @@ def accion_cierre_dia(tareas):
         print(f"\n  {AMARILLO}{len(activas)} tarea/s sin completar:{R}\n")
 
         for t in activas:
-            for campo in ("foco_inicio","foco_duracion","_estado_previo"):
+            for campo in ("foco_inicio","foco_duracion","_estado_previo","minutos_acum_base"):
                 t.pop(campo, None)
             tipo = etiqueta_tipo(t.get("tipo","fondo"))
             print(f"  {tipo}  {BLANCO}{BOLD}{nombre_corto(t['name'],44)}{R}")
@@ -823,7 +808,7 @@ def _rofi_tarea(tarea, tareas):
     elif acc == "cerrar_foco":
         _rofi_cerrar_foco(tareas, tarea)
     elif acc == "marcar_lista":
-        for campo in ("foco_inicio", "foco_duracion", "_estado_previo"):
+        for campo in ("foco_inicio", "foco_duracion", "_estado_previo", "minutos_acum_base"):
             tarea.pop(campo, None)
         tarea["estado"] = "listo"
         tarea["completado"] = date.today().isoformat()
@@ -833,7 +818,7 @@ def _rofi_tarea(tarea, tareas):
     elif acc == "dependencias":
         _rofi_dependencias(tareas, tarea)
     elif acc == "saltar":
-        for campo in ("foco_inicio", "foco_duracion", "_estado_previo"):
+        for campo in ("foco_inicio", "foco_duracion", "_estado_previo", "minutos_acum_base"):
             tarea.pop(campo, None)
         tarea["estado"] = "pendiente"
         tarea.pop("fecha_activacion", None)
@@ -955,6 +940,7 @@ def _rofi_iniciar_foco(tareas=None, tarea=None):
     tarea["foco_inicio"] = datetime.now().isoformat()
     tarea["foco_duracion"] = duracion
     tarea["minutos_acumulados"] = tarea.get("minutos_acumulados", 0)
+    tarea["minutos_acum_base"]  = tarea.get("minutos_acumulados", 0)
     guardar_tareas(tareas)
     refrescar_waybar()
     termina = (datetime.now() + timedelta(minutes=duracion)).strftime("%H:%M")
@@ -974,6 +960,7 @@ def _rofi_foco_directo(tareas=None):
     tarea["foco_inicio"] = datetime.now().isoformat()
     tarea["foco_duracion"] = 90
     tarea["minutos_acumulados"] = tarea.get("minutos_acumulados", 0)
+    tarea["minutos_acum_base"]  = tarea.get("minutos_acumulados", 0)
     guardar_tareas(tareas)
     refrescar_waybar()
     termina = (datetime.now() + timedelta(minutes=90)).strftime("%H:%M")
@@ -1014,9 +1001,7 @@ def _rofi_cerrar_foco(tareas=None, tarea=None):
     })
     guardar_historial(hist)
 
-    tarea["minutos_acumulados"] = tarea.get("minutos_acumulados", 0) + elapsed
-
-    for campo in ("foco_inicio", "foco_duracion", "_estado_previo"):
+    for campo in ("foco_inicio", "foco_duracion", "_estado_previo", "minutos_acum_base"):
         tarea.pop(campo, None)
 
     if acc == "lista":
@@ -1091,7 +1076,7 @@ def _rofi_marcar_lista(tareas=None):
     tarea = next((t for t in tareas if t["id"] == activas[sel]["id"]), None)
     if tarea is None:
         return
-    for campo in ("foco_inicio", "foco_duracion", "_estado_previo"):
+    for campo in ("foco_inicio", "foco_duracion", "_estado_previo", "minutos_acum_base"):
         tarea.pop(campo, None)
     tarea["estado"] = "listo"
     tarea["completado"] = date.today().isoformat()
@@ -1155,7 +1140,7 @@ def _rofi_cierre_dia(tareas=None):
         return
 
     for tarea in activas:
-        for campo in ("foco_inicio", "foco_duracion", "_estado_previo"):
+        for campo in ("foco_inicio", "foco_duracion", "_estado_previo", "minutos_acum_base"):
             tarea.pop(campo, None)
         acc = _menu([
             (f"{ICONOS_TIPO.get(tarea.get('tipo','fondo'),'●')}  {tarea['name'][:40]}", _K_HEADER),
