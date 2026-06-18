@@ -1,0 +1,48 @@
+
+* {
+    font:                        "JetBrainsMono Nerd Font 12";
+    background-color:            #1e1e1e;
+    text-color:                  #d4d4d4;
+    border-color:                #3c3c3c;
+}
+
+window {
+    width:                       520px;
+    border:                      1px;
+    border-radius:               6px;
+    padding:                     0;
+}
+
+inputbar {
+    padding:                     6px 10px;
+    border:                      0 0 1px 0;
+    border-color:                #3c3c3c;
+}
+
+prompt {
+    color:                       #007acc;
+    margin:                      0 8px 0 0;
+}
+
+entry {
+    color:                       #d4d4d4;
+}
+
+listview {
+    lines:                       15;
+    padding:                     0;
+}
+
+element {
+    padding:                     6px 10px;
+}
+
+element normal {
+    background-color:            transparent;
+    text-color:                  #d4d4d4;
+}
+
+element selected {
+    background-color:            #094771;
+    text-color:                  #ffffff;
+}
