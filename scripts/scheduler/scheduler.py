@@ -95,14 +95,12 @@ def foco_activo(tareas):
     return next((t for t in tareas if t.get("estado") == "en_foco"), None)
 
 def minutos_en_foco(tarea):
-    acum = tarea.get("minutos_acumulados")
-    if acum is not None:
-        return acum
     inicio = tarea.get("foco_inicio")
-    if not inicio:
-        return 0
-    delta = datetime.now() - datetime.fromisoformat(inicio)
-    return int(delta.total_seconds() / 60)
+    if inicio:
+        delta = datetime.now() - datetime.fromisoformat(inicio)
+        return int(delta.total_seconds() / 60)
+    acum = tarea.get("minutos_acumulados", 0)
+    return int(acum)
 
 
 def dias_hasta(deadline_str):
@@ -576,6 +574,8 @@ def accion_cerrar_foco(tareas):
     })
     guardar_historial(hist)
 
+    foco["minutos_acumulados"] = foco.get("minutos_acumulados", 0) + elapsed
+
     for campo in ("foco_inicio", "foco_duracion", "_estado_previo"):
         foco.pop(campo, None)
 
@@ -1013,6 +1013,8 @@ def _rofi_cerrar_foco(tareas=None, tarea=None):
         "resultado": {"lista": "l", "pendiente": "s", "hoy": "h"}.get(acc, "?"),
     })
     guardar_historial(hist)
+
+    tarea["minutos_acumulados"] = tarea.get("minutos_acumulados", 0) + elapsed
 
     for campo in ("foco_inicio", "foco_duracion", "_estado_previo"):
         tarea.pop(campo, None)
