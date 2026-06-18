@@ -17,7 +17,6 @@ from pathlib import Path
 BASE_DIR   = Path.home() / "OneDrive" / "varios" / "scheduler"
 BASE_DIR.mkdir(parents=True, exist_ok=True)
 TASKS_FILE = BASE_DIR / "tasks.json"
-PLAN_FILE  = BASE_DIR / "daily_plan.json"
 FOCUS_FILE = BASE_DIR / "focus_blocks.json"
 
 TIPOS = {"critica": 5, "intensiva": 3, "fondo": 1}
@@ -56,14 +55,6 @@ def cargar_tareas():
 def guardar_tareas(tareas):
     TASKS_FILE.write_text(json.dumps(tareas, indent=2, ensure_ascii=False))
 
-def cargar_plan():
-    if not PLAN_FILE.exists():
-        return None
-    return json.loads(PLAN_FILE.read_text())
-
-def guardar_plan(plan):
-    PLAN_FILE.write_text(json.dumps(plan, indent=2, ensure_ascii=False))
-
 def cargar_historial():
     if not FOCUS_FILE.exists():
         return []
@@ -75,12 +66,6 @@ def guardar_historial(h):
 def proximo_id(tareas):
     return max((t["id"] for t in tareas), default=0) + 1
 
-
-def plan_de_hoy():
-    plan = cargar_plan()
-    if not plan or plan.get("fecha") != date.today().isoformat():
-        return None
-    return plan
 
 def foco_activo(tareas):
     return next((t for t in tareas if t.get("estado") == "en_foco"), None)
@@ -137,14 +122,8 @@ def tareas_ordenadas(tareas):
     return sorted(activas, key=lambda t: calcular_prioridad(t, tareas), reverse=True)
 
 def tarea_principal(tareas):
-    plan = plan_de_hoy()
-    if plan:
-        ids_plan = [plan["principal"]] + plan.get("secundarias", [])
-        candidatas = [t for t in tareas if t["id"] in ids_plan and t["estado"] in ("hoy", "en_foco")]
-        if candidatas:
-            return sorted(candidatas, key=lambda t: calcular_prioridad(t, tareas), reverse=True)[0]
     for t in tareas_ordenadas(tareas):
-        if not esta_bloqueada(t, tareas):
+        if t["estado"] in ("hoy", "en_foco") and not esta_bloqueada(t, tareas):
             return t
     return None
 
@@ -231,26 +210,19 @@ def mostrar_foco(foco):
         print(f"  {GRIS}⏱ {acum_str} de pomodoros completados{R}")
     linea("─", AMARILLO)
 
-def mostrar_plan(tareas):
-    plan = plan_de_hoy()
-    if not plan:
-        return False
-
-    bloqueado = f" {ROJO}[CERRADO]{R}" if plan.get("cerrado") else f" {VERDE}[abierto]{R}"
-    seccion(f"📋  PLAN DE HOY{bloqueado}", CYAN)
-
-    ids_plan = [plan["principal"]] + plan.get("secundarias", [])
-    for i, tid in enumerate(ids_plan):
-        t = next((x for x in tareas if x["id"] == tid), None)
-        if not t:
-            continue
-        slot = f"{MAGENTA}PRINCIPAL{R}" if i == 0 else f"{GRIS}  SEC {i}  {R}"
-        tipo_col = COLOR_TIPO.get(t.get("tipo","fondo"), GRIS)
-        estado_str = {"hoy": f"{CYAN}hoy{R}", "en_foco": f"{AMARILLO}⚡ en foco{R}", "listo": f"{VERDE}✓ listo{R}"}.get(t["estado"], t["estado"])
+def mostrar_hoy(tareas):
+    hoy = [t for t in tareas if t["estado"] == "hoy"]
+    if not hoy:
+        return
+    ordenadas = sorted(hoy, key=lambda t: calcular_prioridad(t, tareas), reverse=True)
+    seccion(f"📋  HOY  ({len(hoy)})", CYAN)
+    for i, t in enumerate(ordenadas):
         dias  = dias_hasta(t.get("limite"))
         d_fmt = formato_dias(dias, t.get("limite"))
+        tipo  = etiqueta_tipo(t.get("tipo","fondo"))
         cat   = etiqueta_cat(t.get("categoria","personal"))
-        print(f"  {slot}  {tipo_col}●{R} {cat} {BLANCO}{nombre_corto(t['name'],36)}{R}  {d_fmt}  {estado_str}")
+        bloq  = f"  {GRIS}🔒{R}" if esta_bloqueada(t, tareas) else ""
+        print(f"  {GRIS}{i+1:2}.{R}  {tipo} {cat}  {BLANCO}{nombre_corto(t['name'],34)}{R}  {d_fmt}{bloq}")
 
 def mostrar_pendientes(tareas):
     pend = [t for t in tareas if t["estado"] == "pendiente"]
@@ -289,7 +261,7 @@ def mostrar_stats_rapidas(tareas):
     partes = []
     if total_pend: partes.append(f"{AZUL}📦 {total_pend} pendientes{R}")
     if total_foco: partes.append(f"{AMARILLO}⚡ {total_foco} en foco{R}")
-    if total_hoy:  partes.append(f"{CYAN}📋 {total_hoy} en plan{R}")
+    if total_hoy:  partes.append(f"{CYAN}📋 {total_hoy} hoy{R}")
     if total_listo:partes.append(f"{VERDE}✓ {total_listo} listos{R}")
     if min_hoy:    partes.append(f"{MAGENTA}⏱ {min_hoy}m foco hoy{R}")
 
@@ -297,9 +269,8 @@ def mostrar_stats_rapidas(tareas):
         print(f"\n  {'  ·  '.join(partes)}")
 
 
-def construir_menu(tareas, foco, plan):
-    opciones = []
-    opciones.append(("n", "nueva tarea", "nueva"))
+def construir_menu(tareas, foco):
+    opciones = [("n", "nueva tarea", "nueva")]
 
     if foco:
         opciones.append(("f", "cerrar foco", "cerrar_foco"))
@@ -307,18 +278,16 @@ def construir_menu(tareas, foco, plan):
         hoy = [t for t in tareas if t["estado"] == "hoy"]
         if hoy:
             opciones.append(("f", "iniciar foco", "iniciar_foco"))
-            opciones.append(("F", "foco directo (top)", "foco_directo"))
-        else:
-            pend = [t for t in tareas if t["estado"] == "pendiente"]
-            if pend:
-                opciones.append(("p", "armar plan de hoy", "armar_plan"))
+            opciones.append(("F", "foco directo", "foco_directo"))
 
-    if plan and not plan.get("cerrado"):
-        opciones.append(("p", "cerrar plan", "cerrar_plan"))
+    todo = [t for t in tareas if t["estado"] in ("pendiente", "hoy")]
+    if todo:
+        opciones.append(("p", "hoy / pendiente", "toggle_hoy"))
 
     activas = [t for t in tareas if t["estado"] in ("hoy","pendiente","en_foco")]
     if activas:
         opciones.append(("l", "marcar lista", "marcar_lista"))
+        opciones.append(("d", "dependencias", "dependencias"))
 
     fin_dia = [t for t in tareas if t["estado"] in ("hoy","en_foco")]
     if fin_dia:
@@ -403,80 +372,76 @@ def accion_nueva(tareas):
     guardar_tareas(tareas)
     p = calcular_prioridad(tarea, tareas)
     print(f"\n  {VERDE}✓ [{tarea['id']}] '{nombre}'{R}  {GRIS}{tipo}/{categoria}  p={p:.2f}{R}")
+
+    # Dependencias
+    activas = [t for t in tareas if t["estado"] in ("pendiente", "hoy") and t["id"] != tarea["id"]]
+    if activas:
+        print(f"\n  {GRIS}¿Depende de alguna tarea?{R}")
+        ordenadas = sorted(activas, key=lambda t: calcular_prioridad(t, tareas), reverse=True)
+        for i, t in enumerate(ordenadas):
+            tipo = etiqueta_tipo(t.get("tipo","fondo"))
+            cat  = etiqueta_cat(t.get("categoria","personal"))
+            print(f"  {GRIS}{i+1:2}.{R}  {tipo} {cat}  {BLANCO}{nombre_corto(t['name'],40)}{R}")
+        raw = leer_linea(f"  {GRIS}Números (coma, Enter = ninguna):{R} ").strip()
+        if raw:
+            for s in raw.split(","):
+                try:
+                    dep = ordenadas[int(s.strip())-1]
+                    tarea["depende_de"].append(dep["id"])
+                except (ValueError, IndexError):
+                    pass
+            if tarea["depende_de"]:
+                guardar_tareas(tareas)
+                print(f"  {CYAN}→ {len(tarea['depende_de'])} dependencia/s registrada/s{R}")
+
     input(f"  {GRIS}Enter...{R}")
 
 
-def accion_armar_plan(tareas):
+def accion_toggle_hoy(tareas):
+    """Muestra pendientes y hoy, permite elegir número para cambiar estado."""
     limpiar()
-    seccion("Armar Plan de Hoy", CYAN)
+    seccion("Mover tareas entre HOY y pendiente", CYAN)
     linea()
 
-    pend = [t for t in tareas if t["estado"] == "pendiente" and not esta_bloqueada(t, tareas)]
-    if not pend:
-        print(f"  {AMARILLO}No hay tareas pendientes.{R}")
+    todas = [t for t in tareas if t["estado"] in ("pendiente", "hoy")]
+    if not todas:
+        print(f"  {AMARILLO}No hay tareas pendientes ni en hoy.{R}")
         input(f"  {GRIS}Enter...{R}")
         return
 
-    ordenadas = sorted(pend, key=lambda t: calcular_prioridad(t, tareas), reverse=True)
-    print(f"\n  {BOLD}Pendientes ordenadas por prioridad:{R}\n")
+    ordenadas = sorted(todas, key=lambda t: (0 if t["estado"] == "hoy" else 1, -calcular_prioridad(t, tareas)))
+    print()
     for i, t in enumerate(ordenadas):
-        p    = calcular_prioridad(t, tareas)
+        estado_tag = f"{CYAN}hoy{R}" if t["estado"] == "hoy" else f"{GRIS}pendiente{R}"
         tipo = etiqueta_tipo(t.get("tipo","fondo"))
         cat  = etiqueta_cat(t.get("categoria","personal"))
         dias = dias_hasta(t.get("limite"))
         d_fmt= formato_dias(dias, t.get("limite"))
-        print(f"  {GRIS}{i+1:2}.{R}  {tipo} {cat}  {BLANCO}{nombre_corto(t['name'],34)}{R}  {d_fmt}  {GRIS}p={p:.2f}{R}")
+        bloq = f"  {GRIS}🔒{R}" if esta_bloqueada(t, tareas) else ""
+        print(f"  {GRIS}{i+1:2}.{R}  {tipo} {cat}  {BLANCO}{nombre_corto(t['name'],34)}{R}  {d_fmt}  {estado_tag}{bloq}")
 
-    pid_raw = leer_linea(f"\n  {GRIS}PRINCIPAL — número:{R} ").strip()
-    try:
-        principal = ordenadas[int(pid_raw)-1]
-    except (ValueError, IndexError):
-        print(f"  {ROJO}Número inválido.{R}")
-        input(f"  {GRIS}Enter...{R}")
-        return
-
-    secundarias_ids = []
-    restantes = [t for t in ordenadas if t["id"] != principal["id"]]
-    print(f"\n  {GRIS}SECUNDARIAS — hasta 3 (Enter para terminar){R}")
-    for slot in range(1, 4):
-        raw = leer_linea(f"  Sec {slot} (número o Enter): ").strip()
+    print(f"\n  {GRIS}Número → cambia entre hoy/pendiente. Enter para terminar.{R}")
+    while True:
+        raw = leer_linea(f"\n  {GRIS}número:{R} ").strip()
         if not raw:
             break
         try:
-            t = restantes[int(raw)-1]
-            secundarias_ids.append(t["id"])
+            tarea = ordenadas[int(raw)-1]
         except (ValueError, IndexError):
-            print(f"  {GRIS}Número inválido, omitido.{R}")
+            print(f"  {ROJO}Número inválido.{R}")
+            continue
 
-    plan = {
-        "fecha":       date.today().isoformat(),
-        "cerrado":     False,
-        "principal":   principal["id"],
-        "secundarias": secundarias_ids,
-        "creado_en":   datetime.now().isoformat(),
-    }
-    guardar_plan(plan)
+        if tarea["estado"] == "hoy":
+            tarea["estado"] = "pendiente"
+            tarea.pop("fecha_activacion", None)
+            print(f"  {CYAN}→ '{nombre_corto(tarea['name'],30)}' → pendiente{R}")
+        else:
+            tarea["estado"] = "hoy"
+            tarea["fecha_activacion"] = date.today().isoformat()
+            print(f"  {VERDE}→ '{nombre_corto(tarea['name'],30)}' → hoy{R}")
+        guardar_tareas(tareas)
 
-    todos_ids = [principal["id"]] + secundarias_ids
-    for t in tareas:
-        if t["id"] in todos_ids:
-            t["estado"] = "hoy"
-            t["fecha_activacion"] = date.today().isoformat()
-    guardar_tareas(tareas)
-
-    print(f"\n  {VERDE}✓ Plan creado — {len(todos_ids)} tarea/s activas para hoy{R}\n")
-    input(f"  {GRIS}Enter...{R}")
-
-
-def accion_cerrar_plan():
-    plan = plan_de_hoy()
-    if not plan:
-        return
-    plan["cerrado"]    = True
-    plan["cerrado_en"] = datetime.now().isoformat()
-    guardar_plan(plan)
-    print(f"\n  {VERDE}✓ Plan cerrado.{R}")
-    input(f"  {GRIS}Enter...{R}")
+    input(f"\n  {GRIS}Enter...{R}")
 
 
 def accion_iniciar_foco(tareas):
@@ -511,17 +476,23 @@ def accion_iniciar_foco(tareas):
     else:
         tarea = ordenadas[0]
 
+    raw = leer_linea(f"  {GRIS}Duración en minutos [90]:{R} ").strip()
+    try:
+        duracion = max(5, int(raw)) if raw else 90
+    except ValueError:
+        duracion = 90
+
     tarea["_estado_previo"]     = tarea["estado"]
     tarea["estado"]             = "en_foco"
     tarea["foco_inicio"]        = datetime.now().isoformat()
-    tarea["foco_duracion"]      = 90
+    tarea["foco_duracion"]      = duracion
     tarea["minutos_acumulados"] = tarea.get("minutos_acumulados", 0)
     guardar_tareas(tareas)
     refrescar_waybar()
 
-    termina = (datetime.now() + timedelta(minutes=90)).strftime("%H:%M")
+    termina = (datetime.now() + timedelta(minutes=duracion)).strftime("%H:%M")
     print(f"\n  {AMARILLO}⚡ Foco: {tarea['name']}{R}")
-    print(f"  {GRIS}90 min  ·  termina ~{termina}{R}")
+    print(f"  {GRIS}{duracion} min  ·  termina ~{termina}{R}")
     input(f"  {GRIS}Enter...{R}")
 
 
@@ -666,13 +637,6 @@ def accion_cierre_dia(tareas):
 
         guardar_tareas(tareas)
 
-    plan = plan_de_hoy()
-    if plan:
-        plan["archivado"]    = True
-        plan["archivado_en"] = datetime.now().isoformat()
-        guardar_plan(plan)
-        print(f"  {GRIS}Plan archivado.{R}")
-
     refrescar_waybar()
     print(f"\n  {BOLD}Día cerrado.{R}")
     input(f"  {GRIS}Enter...{R}")
@@ -719,6 +683,64 @@ def mostrar_desbloqueadas(tarea_id, tareas):
             print(f"    → [{u['id']}] {u['name']} (p={p:.3f})")
 
 
+def accion_dependencias(tareas):
+    activas = [t for t in tareas if t["estado"] in ("pendiente", "hoy", "en_foco")]
+    if not activas:
+        print(f"  {AMARILLO}No hay tareas activas.{R}")
+        input(f"  {GRIS}Enter...{R}")
+        return
+
+    limpiar()
+    seccion("Editar dependencias", CYAN)
+    linea()
+    print()
+    for i, t in enumerate(activas):
+        tipo = etiqueta_tipo(t.get("tipo","fondo"))
+        cat  = etiqueta_cat(t.get("categoria","personal"))
+        dep  = f"  {GRIS}deps: {t.get('depende_de', [])}{R}" if t.get("depende_de") else ""
+        print(f"  {GRIS}{i+1}.{R}  {tipo} {cat}  {BLANCO}{nombre_corto(t['name'],36)}{R}{dep}")
+
+    raw = leer_linea(f"\n  {GRIS}Número de tarea:{R} ").strip()
+    if not raw:
+        return
+    try:
+        tarea = activas[int(raw)-1]
+    except (ValueError, IndexError):
+        return
+
+    limpiar()
+    seccion(f"Dependencias de: {nombre_corto(tarea['name'],40)}", CYAN)
+    linea()
+
+    otras = [t for t in tareas if t["id"] != tarea["id"] and t["estado"] != "listo"]
+    if not otras:
+        print(f"\n  {GRIS}No hay otras tareas para elegir.{R}")
+        input(f"  {GRIS}Enter...{R}")
+        return
+
+    print()
+    for i, t in enumerate(otras):
+        marcado = f"{CYAN}[x]{R}" if t["id"] in tarea.get("depende_de", []) else f"{GRIS}[ ]{R}"
+        tipo = etiqueta_tipo(t.get("tipo","fondo"))
+        cat  = etiqueta_cat(t.get("categoria","personal"))
+        print(f"  {marcado}  {GRIS}{i+1:2}.{R}  {tipo} {cat}  {BLANCO}{nombre_corto(t['name'],36)}{R}")
+
+    print(f"\n  {GRIS}Números (coma): marca/desmarca. Enter = guardar.{R}")
+    raw = leer_linea(f"\n  {GRIS}números:{R} ").strip()
+    if raw:
+        deps = []
+        for s in raw.split(","):
+            try:
+                dep = otras[int(s.strip())-1]
+                deps.append(dep["id"])
+            except (ValueError, IndexError):
+                pass
+        tarea["depende_de"] = deps
+        guardar_tareas(tareas)
+        print(f"  {VERDE}✓ {len(deps)} dependencia/s guardadas{R}")
+    input(f"  {GRIS}Enter...{R}")
+
+
 def refrescar_waybar():
     try:
         subprocess.run(["pkill", "-SIGRTMIN+8", "waybar"], check=False, capture_output=True)
@@ -730,7 +752,6 @@ def cmd_tui():
     while True:
         limpiar()
         tareas = cargar_tareas()
-        plan   = plan_de_hoy()
         foco   = foco_activo(tareas)
 
         hoy_str = date.today().strftime("%A %d %b").capitalize()
@@ -740,13 +761,12 @@ def cmd_tui():
 
         if foco:
             mostrar_foco(foco)
-        if plan:
-            mostrar_plan(tareas)
 
+        mostrar_hoy(tareas)
         mostrar_pendientes(tareas)
         mostrar_completadas_recientes(tareas)
 
-        opciones = construir_menu(tareas, foco, plan)
+        opciones = construir_menu(tareas, foco)
         mostrar_menu(opciones)
 
         tecla = leer_tecla()
@@ -762,11 +782,9 @@ def cmd_tui():
         elif accion == "nueva":
             tareas = cargar_tareas()
             accion_nueva(tareas)
-        elif accion == "armar_plan":
+        elif accion == "toggle_hoy":
             tareas = cargar_tareas()
-            accion_armar_plan(tareas)
-        elif accion == "cerrar_plan":
-            accion_cerrar_plan()
+            accion_toggle_hoy(tareas)
         elif accion == "iniciar_foco":
             tareas = cargar_tareas()
             accion_iniciar_foco(tareas)
@@ -779,6 +797,9 @@ def cmd_tui():
         elif accion == "marcar_lista":
             tareas = cargar_tareas()
             accion_marcar_lista(tareas)
+        elif accion == "dependencias":
+            tareas = cargar_tareas()
+            accion_dependencias(tareas)
         elif accion == "cierre_dia":
             tareas = cargar_tareas()
             accion_cierre_dia(tareas)
@@ -829,8 +850,7 @@ def cmd_waybar():
     else:
         clase, d_str = "normal",   "sin fecha"
 
-    plan = plan_de_hoy()
-    header = f"<b>Plan de hoy — {date.today().isoformat()}</b>" if plan else "<b>Siguiente tarea:</b>"
+    header = "<b>Siguiente tarea:</b>"
     lineas = [header]
     for i, t in enumerate(tareas_ordenadas(tareas)[:5]):
         p    = calcular_prioridad(t, tareas)
