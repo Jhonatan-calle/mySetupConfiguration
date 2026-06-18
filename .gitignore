@@ -40,3 +40,5 @@ google-chrome/
 qutebrowser/
 opencode.sh
 ktimezonedrc
+__pycache__/
+*.pyc

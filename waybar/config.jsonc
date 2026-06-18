@@ -70,25 +70,26 @@
   },
 
   "custom/pomodoro": {
-    "exec": "nice -n 19 ionice -c 3 ~/.config/scripts/pomodoro.py",
+    "exec": "nice -n 19 ionice -c 3 /home/jhonatan/.config/scripts/pomodoro.py",
     "interval": 1,
-    "on-click": "~/.config/scripts/pomodoro.py toggle",
-    "on-click-right": "~/.config/scripts/pomodoro.py skip",
-    "on-click-middle": "~/.config/scripts/pomodoro.py reset",
+    "on-click": "/home/jhonatan/.config/scripts/pomodoro.py toggle",
+    "on-click-right": "/home/jhonatan/.config/scripts/pomodoro.py skip",
+    "on-click-middle": "/home/jhonatan/.config/scripts/pomodoro.py reset",
     "tooltip": true,
     "return-type": "json",
   },
 
   "custom/gastos": {
-    "exec": "~/.config/scripts/gastos.sh",
+    "exec": "/home/jhonatan/.config/scripts/gastos.sh",
     "interval": 30,
-    "on-click": "~/.config/scripts/gastos.sh add",
+    "on-click": "/home/jhonatan/.config/scripts/gastos.sh add",
+    "on-click-right": "/home/jhonatan/.config/scripts/gastos.sh list",
     "return-type": "json",
     "tooltip": true,
   },
 
   "custom/scheduler": {
-    "exec": "~/.local/bin/scheduler waybar",
+    "exec": "/home/jhonatan/.local/bin/scheduler waybar",
     "return-type": "json",
     "interval": 60,
     "signal": 8, // SIGRTMIN+8
