@@ -40,3 +40,4 @@ opencode.sh
 ktimezonedrc
 __pycache__/
 *.pyc
+pipewire/
