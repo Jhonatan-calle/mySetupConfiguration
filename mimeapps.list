@@ -1,4 +1,9 @@
 
 [Default Applications]
-image/jpeg=app.zen_browser.zen.desktop
+image/jpeg=imv.desktop
 x-scheme-handler/obsidian=obsidian.desktop
+image/png=imv.desktop
+image/jpg=imv.desktop
+image/gif=imv.desktop
+image/bmp=imv.desktop
+image/webp=imv.desktop

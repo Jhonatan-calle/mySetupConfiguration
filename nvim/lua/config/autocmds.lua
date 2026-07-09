@@ -11,7 +11,12 @@ vim.api.nvim_del_augroup_by_name("lazyvim_wrap_spell")
 ---- Autocmds are automatically loaded on the VeryLazy event
 -- Add any additional autocmds here
 
--- nvim/lua/config/autocmds.lua
+vim.api.nvim_create_autocmd("FileType", {
+  pattern = "python",
+  callback = function()
+    vim.b.autoformat = false
+  end,
+})
 
 local function set_hl(name, opts)
   vim.api.nvim_set_hl(0, name, opts)

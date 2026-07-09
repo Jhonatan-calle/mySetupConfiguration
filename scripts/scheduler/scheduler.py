@@ -779,6 +779,8 @@ def _rofi_tarea(tarea, tareas):
         menu.append(("[c]  cerrar foco", "cerrar_foco"))
     menu.append(("[l]  marcar lista", "marcar_lista"))
     menu.append(("[d]  editar dependencias", "dependencias"))
+    menu.append(("[e]  editar tarea", "editar"))
+    menu.append(("[x]  eliminar tarea", "eliminar"))
     if estado in ("hoy", "en_foco"):
         menu.append(("[s]  saltear → pendiente", "saltar"))
     menu.append(("[←]  volver", "volver"))
@@ -817,6 +819,10 @@ def _rofi_tarea(tarea, tareas):
         _rofi_msg(f"✓ '{tarea['name'][:30]}' lista!")
     elif acc == "dependencias":
         _rofi_dependencias(tareas, tarea)
+    elif acc == "editar":
+        _rofi_editar(tareas, tarea)
+    elif acc == "eliminar":
+        _rofi_eliminar(tareas, tarea)
     elif acc == "saltar":
         for campo in ("foco_inicio", "foco_duracion", "_estado_previo", "minutos_acum_base"):
             tarea.pop(campo, None)
@@ -831,66 +837,36 @@ def _rofi_nueva(tareas=None):
     if tareas is None:
         tareas = cargar_tareas()
 
-    raw = _rofi_in("nombre [| tipo | categoria | fecha]")
-    if raw is None:
+    nombre = _rofi_in("nombre de la tarea")
+    if nombre is None or not nombre.strip():
         return
 
-    partes = [p.strip() for p in raw.split("|")]
-    nombre = partes[0]
-    if not nombre:
-        _rofi_msg("Nombre requerido")
-        return
+    tipo_sel = _menu([
+        ("[c]  critica", "critica"),
+        ("[i]  intensiva", "intensiva"),
+        ("[f]  fondo", "fondo"),
+    ], "tipo")
+    tipo = tipo_sel if tipo_sel else "intensiva"
 
-    tipo = "intensiva"
-    if len(partes) > 1 and partes[1]:
-        tipo = {"c": "critica", "i": "intensiva", "f": "fondo"}.get(partes[1].lower(), partes[1])
-        if tipo not in TIPOS:
-            tipo = "intensiva"
-    else:
-        sel = _menu([
-            ("[c]  critica", "critica"),
-            ("[i]  intensiva", "intensiva"),
-            ("[f]  fondo", "fondo"),
-        ], "tipo")
-        if sel:
-            tipo = sel
+    cat_sel = _menu([
+        ("[1]  universidad", "universidad"),
+        ("[2]  software", "software"),
+        ("[3]  learning", "learning"),
+        ("[4]  personal", "personal"),
+    ], "categoria")
+    categoria = cat_sel if cat_sel else "personal"
 
-    categoria = "personal"
-    if len(partes) > 2 and partes[2]:
-        cats = list(CATEGORIAS.keys())
-        try:
-            idx = int(partes[2]) - 1
-            categoria = cats[idx] if 0 <= idx < len(cats) else "personal"
-        except ValueError:
-            categoria = partes[2].lower() if partes[2].lower() in CATEGORIAS else "personal"
-    else:
-        sel = _menu([
-            ("[1]  universidad", "universidad"),
-            ("[2]  software", "software"),
-            ("[3]  learning", "learning"),
-            ("[4]  personal", "personal"),
-        ], "categoria")
-        if sel:
-            categoria = sel
-
+    r = _rofi_in("fecha límite (AAAA-MM-DD, Enter = sin fecha)")
     limite = None
-    if len(partes) > 3 and partes[3]:
+    if r:
         try:
-            date.fromisoformat(partes[3].strip())
-            limite = partes[3].strip()
+            date.fromisoformat(r)
+            limite = r
         except ValueError:
-            pass
-    else:
-        r = _rofi_in("fecha límite AAAA-MM-DD (opcional)")
-        if r:
-            try:
-                date.fromisoformat(r)
-                limite = r
-            except ValueError:
-                _rofi_msg("Fecha inválida")
+            _rofi_msg("Fecha inválida, se ignora")
 
     tarea = {
-        "id": proximo_id(tareas), "name": nombre, "notas": None,
+        "id": proximo_id(tareas), "name": nombre.strip(), "notas": None,
         "estado": "pendiente", "creado": date.today().isoformat(),
         "categoria": categoria, "tipo": tipo, "limite": limite,
         "urgencia": 5, "depende_de": [],
@@ -898,7 +874,7 @@ def _rofi_nueva(tareas=None):
     tareas.append(tarea)
     guardar_tareas(tareas)
     refrescar_waybar()
-    _rofi_msg(f"✓ [{tarea['id']}] '{nombre}' ({tipo}/{categoria})")
+    _rofi_msg(f"✓ [{tarea['id']}] '{nombre.strip()}' ({tipo}/{categoria})")
 
     activas = [t for t in tareas if t["estado"] in ("pendiente", "hoy") and t["id"] != tarea["id"]]
     if activas:
@@ -906,11 +882,125 @@ def _rofi_nueva(tareas=None):
         dep_items = [("(ninguna, Enter)", "ninguna")]
         for i, t in enumerate(ordenadas):
             dep_items.append((f"{i+1:2}. {ICONOS_TIPO.get(t.get('tipo',''),'●')} {t['name'][:40]}", i))
-        sel = _menu(dep_items, "¿depende de?")
+        sel = _menu(dep_items, "¿depende de alguna?")
         if sel is not None and sel != "ninguna":
             tarea["depende_de"].append(ordenadas[sel]["id"])
             guardar_tareas(tareas)
             _rofi_msg(f"✓ Dependencia: {ordenadas[sel]['name'][:30]}")
+
+
+def _rofi_editar(tareas=None, tarea=None):
+    if tareas is None:
+        tareas = cargar_tareas()
+    if tarea is None:
+        return
+    tarea = next((t for t in tareas if t["id"] == tarea["id"]), None)
+    if tarea is None:
+        return
+
+    while True:
+        tipo  = ICONOS_TIPO.get(tarea.get("tipo","fondo"),"●")
+        dias  = dias_hasta(tarea.get("limite"))
+        d_fmt = f"{int(dias)}d" if tarea.get("limite") else "∞"
+        cats  = list(CATEGORIAS.keys())
+        cat_idx = cats.index(tarea.get("categoria","personal")) + 1 if tarea.get("categoria") in cats else 4
+
+        items = [
+            (f"  {tarea['name']}", _K_HEADER),
+            (f"  {tipo} {tarea.get('tipo','')}  ·  {d_fmt}  ·  urg={tarea.get('urgencia',5)}", _K_HEADER),
+            ("", _K_HEADER),
+            (f"[n]  nombre: {tarea['name'][:40]}", "nombre"),
+            (f"[t]  tipo: {tarea.get('tipo','intensiva')}", "tipo"),
+            (f"[c]  categoría: {tarea.get('categoria','personal')}", "categoria"),
+            (f"[f]  fecha límite: {tarea.get('limite') or 'sin fecha'}", "fecha"),
+            (f"[u]  urgencia: {tarea.get('urgencia',5)}/10", "urgencia"),
+            ("", _K_HEADER),
+            ("[Enter]  guardar y volver", "guardar"),
+        ]
+
+        acc = _menu(items, f"editar {tarea['name'][:16]}")
+        if acc is None or acc == "guardar":
+            break
+
+        tareas = cargar_tareas()
+        tarea = next((t for t in tareas if t["id"] == tarea["id"]), None)
+        if tarea is None:
+            break
+
+        if acc == "nombre":
+            r = _rofi_in("nuevo nombre", tarea["name"])
+            if r and r.strip():
+                tarea["name"] = r.strip()
+        elif acc == "tipo":
+            sel = _menu([
+                ("[c]  critica", "critica"),
+                ("[i]  intensiva", "intensiva"),
+                ("[f]  fondo", "fondo"),
+            ], "nuevo tipo")
+            if sel:
+                tarea["tipo"] = sel
+        elif acc == "categoria":
+            sel = _menu([
+                ("[1]  universidad", "universidad"),
+                ("[2]  software", "software"),
+                ("[3]  learning", "learning"),
+                ("[4]  personal", "personal"),
+            ], "nueva categoría")
+            if sel:
+                tarea["categoria"] = sel
+        elif acc == "fecha":
+            r = _rofi_in("nueva fecha (AAAA-MM-DD, Enter = sin fecha)", tarea.get("limite") or "")
+            if r is not None:
+                if r.strip():
+                    try:
+                        date.fromisoformat(r.strip())
+                        tarea["limite"] = r.strip()
+                    except ValueError:
+                        _rofi_msg("Fecha inválida")
+                else:
+                    tarea["limite"] = None
+        elif acc == "urgencia":
+            r = _rofi_in("urgencia (1-10)", str(tarea.get("urgencia", 5)))
+            if r:
+                try:
+                    u = int(r)
+                    if 1 <= u <= 10:
+                        tarea["urgencia"] = u
+                    else:
+                        _rofi_msg("Urgencia debe ser entre 1 y 10")
+                except ValueError:
+                    _rofi_msg("Número inválido")
+
+        guardar_tareas(tareas)
+        refrescar_waybar()
+
+    guardar_tareas(tareas)
+    refrescar_waybar()
+    _rofi_msg(f"✓ '{tarea['name'][:30]}' actualizada")
+
+
+def _rofi_eliminar(tareas=None, tarea=None):
+    if tareas is None:
+        tareas = cargar_tareas()
+    if tarea is None:
+        return
+    tarea = next((t for t in tareas if t["id"] == tarea["id"]), None)
+    if tarea is None:
+        return
+
+    sel = _menu([
+        (f"  {tarea['name']}", _K_HEADER),
+        ("", _K_HEADER),
+        ("  ⚠ Eliminar esta tarea", _K_HEADER),
+        ("", _K_HEADER),
+        ("[s]  sí, eliminar", "eliminar"),
+        ("[n]  no, cancelar", "cancelar"),
+    ], f"¿eliminar '{tarea['name'][:16]}'?")
+    if sel == "eliminar":
+        tareas[:] = [t for t in tareas if t["id"] != tarea["id"]]
+        guardar_tareas(tareas)
+        refrescar_waybar()
+        _rofi_msg(f"✗ '{tarea['name'][:30]}' eliminada")
 
 
 def _rofi_iniciar_foco(tareas=None, tarea=None):

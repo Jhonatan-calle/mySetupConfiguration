@@ -12,9 +12,9 @@ echo "  ────────────────────────
 # Crear directorios
 mkdir -p "$BIN_DIR" "$DATA_DIR"
 
-# Copiar script principal
-cp "$SCRIPT_DIR/scheduler.py" "$BIN_DIR/scheduler"
-chmod +x "$BIN_DIR/scheduler"
+# Vincular script principal (symlink para que refleje cambios)
+chmod +x "$SCRIPT_DIR/scheduler.py"
+ln -sf "$SCRIPT_DIR/scheduler.py" "$BIN_DIR/scheduler"
 echo "  ✓ scheduler instalado en $BIN_DIR/scheduler"
 
 # Inicializar tasks.json vacío si no existe

@@ -1,0 +1,17 @@
+android-sdk 26.1.1-2
+android-sdk-build-tools r37.0.0-1
+android-sdk-debug 26.1.1-2
+android-sdk-platform-tools 37.0.0-1
+android-sdk-platform-tools-debug 37.0.0-1
+google-chrome 149.0.7827.53-1
+onedrive-abraunegg 2.5.10-1
+onedrive-abraunegg-debug 2.5.10-1
+smem 1.5-8
+smem-debug 1.5-8
+uksmd-cachyos-nosystemd-git-debug 1.3.0.r122.20250127.23f75ea-1
+uksmd-nosystemd-git 6.12.2.r80.20241224.ba1086b-1
+uksmd-nosystemd-git-debug 6.12.2.r80.20241224.ba1086b-1
+uppaal 5.0.0-3
+visual-studio-code-bin 1.107.1-1
+yay 12.5.7-1
+yay-debug 12.5.7-1

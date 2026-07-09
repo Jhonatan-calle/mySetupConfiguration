@@ -21,6 +21,7 @@
 
   "hyprland/workspaces": {
     "format": "{name}",
+    "on-click": "hyprctl dispatch workspace {id}",
   },
 
   "network": {
