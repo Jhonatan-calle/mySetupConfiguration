@@ -77,55 +77,7 @@ window#waybar {
     color: #007acc;
 }
 
-#custom-gastos {
-    padding: 0 10px;
-    margin: 4px;
-    border-radius: 6px;
-    background-color: rgba(37, 37, 38, 0.96);
-    border: 1px solid #3c3c3c;
-    color: #d4d4d4;
-}
-
-
 /* Tarea normal */
-#custom-scheduler {
-    padding: 0 10px;
-    margin: 4px;
-    border-radius: 6px;
-    background-color: rgba(37, 37, 38, 0.96);
-    border: 1px solid #3c3c3c;
-    color: #d4d4d4;
-}
-
-/* Sin tareas */
-#custom-scheduler.idle {
-    color: #808080;
-}
-
-/* Tarea normal — sin urgencia */
-#custom-scheduler.normal {
-    color: #d4d4d4;
-}
-
-/* Deadline en ≤7 días */
-#custom-scheduler.warning {
-    color: #d7ba7d;
-    border-color: #d7ba7d;
-}
-
-/* Deadline en ≤2 días */
-#custom-scheduler.critical {
-    color: #f44747;
-    border-color: #f44747;
-}
-
-/* Vencida */
-#custom-scheduler.overdue {
-    color: #f44747;
-    border-color: #f44747;
-    animation: pulse 1s infinite;
-}
-
 @keyframes pulse {
     from { opacity: 1; }
     50% { opacity: 0.4; }

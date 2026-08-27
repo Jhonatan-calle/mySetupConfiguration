@@ -21,6 +21,7 @@ require("lazy").setup({
     -- lo necesario para java
     { import = "lazyvim.plugins.extras.lang.java" },
     -- import/override with your plugins
+    { import = "lazyvim.plugins.extras.util.octo" },
     { import = "plugins" },
   },
   defaults = {

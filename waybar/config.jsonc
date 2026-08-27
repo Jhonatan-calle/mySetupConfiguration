@@ -4,8 +4,6 @@
   "height": 30,
   "modules-left": ["hyprland/workspaces"],
   "modules-right": [
-    "custom/scheduler",
-    "custom/gastos",
     //dependnciaas:
     //  rofi-wayland
     //  jq
@@ -21,7 +19,7 @@
 
   "hyprland/workspaces": {
     "format": "{name}",
-    "on-click": "hyprctl dispatch workspace {id}",
+    "on-click": "activate",
   },
 
   "network": {
@@ -78,23 +76,5 @@
     "on-click-middle": "/home/jhonatan/.config/scripts/pomodoro.py reset",
     "tooltip": true,
     "return-type": "json",
-  },
-
-  "custom/gastos": {
-    "exec": "/home/jhonatan/.config/scripts/gastos.sh",
-    "interval": 30,
-    "on-click": "/home/jhonatan/.config/scripts/gastos.sh add",
-    "on-click-right": "/home/jhonatan/.config/scripts/gastos.sh list",
-    "return-type": "json",
-    "tooltip": true,
-  },
-
-  "custom/scheduler": {
-    "exec": "/home/jhonatan/.local/bin/scheduler waybar",
-    "return-type": "json",
-    "interval": 60,
-    "signal": 8, // SIGRTMIN+8
-    "on-click": "/home/jhonatan/.local/bin/scheduler rofi",
-    "tooltip": true,
   },
 }
