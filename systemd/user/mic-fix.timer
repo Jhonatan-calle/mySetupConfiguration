@@ -1,0 +1,9 @@
+[Unit]
+Description=Periodic microphone gain fix (every 30s)
+
+[Timer]
+OnBootSec=10
+OnUnitActiveSec=30
+
+[Install]
+WantedBy=default.target

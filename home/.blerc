@@ -1,0 +1,7 @@
+# ~/.blerc
+
+# Desactiva por completo el coloreado de sintaxis e interactivo
+bleopt highlight_syntax=
+
+# Configura las sugerencias de autocompletado en un gris sutil (fg=242)
+ble-color-setface auto_complete fg=242

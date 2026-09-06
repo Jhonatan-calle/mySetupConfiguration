@@ -1,0 +1,11 @@
+[Unit]
+Description=Set microphone gain to prevent saturation
+After=pipewire-pulse.service
+
+[Service]
+Type=oneshot
+ExecStart=amixer -c0 sset "Internal Mic Boost" 0
+ExecStart=amixer -c0 sset "Capture" 16
+
+[Install]
+WantedBy=default.target
